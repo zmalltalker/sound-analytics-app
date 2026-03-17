@@ -55,23 +55,53 @@ struct ContentView: View {
                             .padding(.horizontal, 40)
                         }
 
-                        Button {
-                            loginService.login()
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "person.circle.fill")
-                                    .font(.title3)
-                                Text("Log In")
-                                    .font(.headline)
+                        if loginService.isLoggedIn {
+                            VStack(spacing: 8) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.green)
+                                    Text("Logged in as")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text(loginService.username ?? "unknown")
+                                        .font(.caption)
+                                        .foregroundStyle(.cyan)
+                                }
+
+                                Button {
+                                    loginService.logout()
+                                } label: {
+                                    Text("Log Out")
+                                        .font(.caption)
+                                        .foregroundStyle(.red)
+                                }
                             }
-                            .foregroundStyle(.black)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, 12)
+                            .padding(.horizontal, 20)
                             .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(Color.green)
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.white.opacity(0.08))
                             )
                             .padding(.horizontal, 40)
+                        } else {
+                            Button {
+                                loginService.login()
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "person.circle.fill")
+                                        .font(.title3)
+                                    Text("Log In")
+                                        .font(.headline)
+                                }
+                                .foregroundStyle(.black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .fill(Color.green)
+                                )
+                                .padding(.horizontal, 40)
+                            }
                         }
                     }
 
@@ -98,6 +128,9 @@ struct ContentView: View {
             .navigationTitle("Home")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            .task {
+                loginService.loadCurrentAccount()
+            }
         }
         .preferredColorScheme(.dark)
     }
