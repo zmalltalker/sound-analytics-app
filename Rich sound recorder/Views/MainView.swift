@@ -13,7 +13,7 @@ struct MainView: View {
 
     var body: some View {
         TabView {
-            ProjectsTab(showProfileSheet: $showProfileSheet)
+            ProjectsTab(loginService: loginService, showProfileSheet: $showProfileSheet)
                 .tabItem {
                     Label("Projects", systemImage: "folder.fill")
                 }
@@ -38,25 +38,104 @@ struct MainView: View {
 // MARK: - Projects Tab
 
 struct ProjectsTab: View {
+    let loginService: AuthenticationService
     @Binding var showProfileSheet: Bool
+
+    @State private var apiService: APIService?
+    @State private var isLoading = false
+    @State private var whoamiResponse: String?
+    @State private var errorMessage: String?
 
     var body: some View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
 
-                VStack(spacing: 20) {
-                    Image(systemName: "folder.fill")
-                        .font(.system(size: 60))
-                        .foregroundStyle(.cyan.opacity(0.5))
+                ScrollView {
+                    VStack(spacing: 24) {
+                        VStack(spacing: 12) {
+                            Image(systemName: "folder.fill")
+                                .font(.system(size: 60))
+                                .foregroundStyle(.cyan.opacity(0.5))
 
-                    Text("Projects")
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(.primary)
+                            Text("Projects")
+                                .font(.title2.weight(.semibold))
+                                .foregroundStyle(.primary)
+                        }
+                        .padding(.top, 20)
 
-                    Text("Coming soon")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        // Whoami API Test Button
+                        Button {
+                            callWhoami()
+                        } label: {
+                            HStack(spacing: 12) {
+                                if isLoading {
+                                    ProgressView()
+                                        .tint(.black)
+                                } else {
+                                    Image(systemName: "person.text.rectangle")
+                                        .font(.title3)
+                                }
+                                Text(isLoading ? "Loading..." : "Call /whoami")
+                                    .font(.headline)
+                            }
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color.cyan)
+                            )
+                            .padding(.horizontal, 40)
+                        }
+                        .disabled(isLoading)
+
+                        // Display Response
+                        if let response = whoamiResponse {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("API Response")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(.secondary)
+                                    .textCase(.uppercase)
+                                    .tracking(0.5)
+
+                                Text(response)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.cyan)
+                                    .padding(16)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .fill(Color.white.opacity(0.06))
+                                    )
+                            }
+                            .padding(.horizontal, 20)
+                        }
+
+                        // Display Error
+                        if let error = errorMessage {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Error")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(.red)
+                                    .textCase(.uppercase)
+                                    .tracking(0.5)
+
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                                    .padding(16)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .fill(Color.red.opacity(0.1))
+                                    )
+                            }
+                            .padding(.horizontal, 20)
+                        }
+                    }
                 }
             }
             .navigationTitle("Projects")
@@ -73,6 +152,31 @@ struct ProjectsTab: View {
                     }
                 }
             }
+            .task {
+                apiService = APIService(loginService: loginService)
+            }
+        }
+    }
+
+    private func callWhoami() {
+        guard let apiService = apiService else { return }
+
+        isLoading = true
+        errorMessage = nil
+        whoamiResponse = nil
+
+        Task {
+            do {
+                let data = try await apiService.get(path: "whoami")
+                if let responseString = String(data: data, encoding: .utf8) {
+                    whoamiResponse = responseString
+                } else {
+                    whoamiResponse = "Received \(data.count) bytes (not UTF-8)"
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isLoading = false
         }
     }
 }

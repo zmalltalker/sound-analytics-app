@@ -17,19 +17,35 @@ class APIService {
     }
 
     func get(path: String) async throws -> Data {
+        print("🔍 API GET Request Debug:")
+        print("   Path: \(path)")
+        print("   Is logged in: \(loginService.isLoggedIn)")
+
         // Ensure we have a token
         guard loginService.isLoggedIn else {
+            print("   ❌ Not authenticated")
             throw APIError.notAuthenticated
         }
 
         // Get fresh token (uses cached token or refreshes silently)
+        print("   🔐 Acquiring access token...")
         let token = await getAccessToken()
+
+        if let token = token {
+            print("   ✅ Token acquired: \(token.prefix(20))...")
+            print("   Token length: \(token.count) chars")
+        } else {
+            print("   ❌ Failed to acquire token")
+            throw APIError.noToken
+        }
+
         guard let token = token else {
             throw APIError.noToken
         }
 
         // Build URL
         guard let url = URL(string: baseURL + path) else {
+            print("   ❌ Invalid URL: \(baseURL + path)")
             throw APIError.invalidURL
         }
 
@@ -39,20 +55,30 @@ class APIService {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        print("🌐 GET \(url)")
-        print("   Authorization: Bearer \(token.prefix(20))...")
+        print("   🌐 Sending GET request to: \(url)")
+        print("   Headers:")
+        print("     Authorization: Bearer \(token.prefix(20))...")
+        print("     Accept: application/json")
 
         // Make request
         let (data, response) = try await URLSession.shared.data(for: request)
 
         // Check response
         guard let httpResponse = response as? HTTPURLResponse else {
+            print("   ❌ Invalid HTTP response")
             throw APIError.invalidResponse
         }
 
-        print("✅ Response: \(httpResponse.statusCode)")
+        print("   📥 Response received:")
+        print("     Status: \(httpResponse.statusCode)")
+        print("     Headers: \(httpResponse.allHeaderFields)")
+
+        if let responseString = String(data: data, encoding: .utf8) {
+            print("     Body: \(responseString.prefix(200))")
+        }
 
         guard (200...299).contains(httpResponse.statusCode) else {
+            print("   ❌ HTTP Error \(httpResponse.statusCode)")
             throw APIError.httpError(statusCode: httpResponse.statusCode)
         }
 

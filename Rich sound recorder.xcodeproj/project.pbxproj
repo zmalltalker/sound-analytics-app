@@ -60,6 +60,7 @@
 				2967B89A2F584E090033B1BF /* Sources */,
 				2967B89B2F584E090033B1BF /* Frameworks */,
 				2967B89C2F584E090033B1BF /* Resources */,
+				9178361A2F69A17100DB4569 /* ShellScript */,
 			);
 			buildRules = (
 			);
@@ -122,6 +123,26 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		9178361A2F69A17100DB4569 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = " # Generate dSYMs for SPM frameworks (MSAL)\n  if [ \"${CONFIGURATION}\" = \"Release\" ]; then\n    echo \"Generating dSYMs for frameworks...\"\n\n    # Find all frameworks in the build directory\n    FRAMEWORKS_DIR=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}\"\n\n    if [ -d \"$FRAMEWORKS_DIR\" ]; then\n      find \"$FRAMEWORKS_DIR\" -name \"*.framework\" -type d | while read FRAMEWORK; do\n        FRAMEWORK_NAME=$(basename \"$FRAMEWORK\" .framework)\n        echo \"Processing $FRAMEWORK_NAME...\"\n\n        # Generate dSYM if it doesn't exist\n        if [ ! -d \"${DWARF_DSYM_FOLDER_PATH}/${FRAMEWORK_NAME}.framework.dSYM\" ]; then\n          dsymutil \"${FRAMEWORK}/${FRAMEWORK_NAME}\" -o \"${DWARF_DSYM_FOLDER_PATH}/${FRAMEWORK_NAME}.framework.dSYM\"\n        fi\n      done\n    fi\n  fi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		2967B89A2F584E090033B1BF /* Sources */ = {

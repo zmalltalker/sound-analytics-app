@@ -119,21 +119,27 @@ class AuthenticationService {
             return
         }
 
+        print("🔐 Acquiring token silently with scopes: \(scopes)")
+
         let parameters = MSALSilentTokenParameters(scopes: scopes, account: account)
 
         application.acquireTokenSilent(with: parameters) { result, error in
             if let error = error {
                 print("⚠️ Silent token acquisition failed: \(error)")
+                print("   Error details: \((error as NSError).userInfo)")
                 completion(nil)
                 return
             }
 
             guard let result = result else {
+                print("❌ No result from silent token acquisition")
                 completion(nil)
                 return
             }
 
             print("✅ Token acquired silently")
+            print("   Scopes in token: \(result.scopes)")
+            print("   Token expires: \(result.expiresOn ?? Date())")
             completion(result.accessToken)
         }
     }
