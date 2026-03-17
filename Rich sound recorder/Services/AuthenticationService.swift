@@ -101,9 +101,12 @@ class AuthenticationService {
             print("   Account: \(result.account.username ?? "unknown")")
             print("   Token: \(result.accessToken.prefix(20))...")
 
-            self?.currentAccount = result.account
-            self?.username = result.account.username
-            self?.isLoggedIn = true
+            guard let self = self else { return }
+            Task { @MainActor in
+                self.currentAccount = result.account
+                self.username = result.account.username
+                self.isLoggedIn = true
+            }
         }
     }
 
