@@ -9,6 +9,7 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var lastRecordingURL: URL?
+    private let loginService = LoginService()
 
     var body: some View {
         NavigationStack {
@@ -32,25 +33,46 @@ struct ContentView: View {
                             .padding(.horizontal, 40)
                     }
 
-                    NavigationLink {
-                        RecordingView { url in
-                            lastRecordingURL = url
+                    VStack(spacing: 12) {
+                        NavigationLink {
+                            RecordingView { url in
+                                lastRecordingURL = url
+                            }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "mic.fill")
+                                    .font(.title3)
+                                Text("Start Recording")
+                                    .font(.headline)
+                            }
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color.cyan)
+                            )
+                            .padding(.horizontal, 40)
                         }
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "mic.fill")
-                                .font(.title3)
-                            Text("Start Recording")
-                                .font(.headline)
+
+                        Button {
+                            loginService.login()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "person.circle.fill")
+                                    .font(.title3)
+                                Text("Log In")
+                                    .font(.headline)
+                            }
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color.green)
+                            )
+                            .padding(.horizontal, 40)
                         }
-                        .foregroundStyle(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(Color.cyan)
-                        )
-                        .padding(.horizontal, 40)
                     }
 
                     if let url = lastRecordingURL {

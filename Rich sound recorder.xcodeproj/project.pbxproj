@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		9178360D2F69750F00DB4569 /* MSAL in Frameworks */ = {isa = PBXBuildFile; productRef = 9178360C2F69750F00DB4569 /* MSAL */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		2967B89E2F584E090033B1BF /* Rich sound recorder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Rich sound recorder.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9178360D2F69750F00DB4569 /* MSAL in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = "Rich sound recorder";
 			packageProductDependencies = (
+				9178360C2F69750F00DB4569 /* MSAL */,
 			);
 			productName = "Rich sound recorder";
 			productReference = 2967B89E2F584E090033B1BF /* Rich sound recorder.app */;
@@ -94,6 +100,9 @@
 			);
 			mainGroup = 2967B8952F584E090033B1BF;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				9178360B2F69750F00DB4569 /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2967B89F2F584E090033B1BF /* Products */;
 			projectDirPath = "";
@@ -256,6 +265,8 @@
 				DEVELOPMENT_TEAM = FALV493978;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Rich-sound-recorder-Info.plist";
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record audio in various formats for sound analysis and machine learning.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -268,7 +279,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.zmalltalker.Rich-sound-recorder";
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.resonyx.ios-recorder";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -290,6 +301,8 @@
 				DEVELOPMENT_TEAM = FALV493978;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Rich-sound-recorder-Info.plist";
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record audio in various formats for sound analysis and machine learning.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -302,7 +315,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.zmalltalker.Rich-sound-recorder";
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.resonyx.ios-recorder";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -336,6 +349,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		9178360B2F69750F00DB4569 /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/AzureAD/microsoft-authentication-library-for-objc";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.9.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		9178360C2F69750F00DB4569 /* MSAL */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9178360B2F69750F00DB4569 /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */;
+			productName = MSAL;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 2967B8962F584E090033B1BF /* Project object */;
 }
