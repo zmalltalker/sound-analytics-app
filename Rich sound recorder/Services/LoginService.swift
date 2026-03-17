@@ -75,10 +75,14 @@ class LoginService {
             return
         }
 
+        let webviewParameters = MSALWebviewParameters(authPresentationViewController: viewController)
+        webviewParameters.webviewType = .authenticationSession  // Forces ASWebAuthenticationSession
+
         let parameters = MSALInteractiveTokenParameters(
             scopes: scopes,
-            webviewParameters: MSALWebviewParameters(authPresentationViewController: viewController)
+            webviewParameters: webviewParameters
         )
+        parameters.promptType = .selectAccount  // Don't use broker
 
         print("🔐 Starting interactive login...")
 
