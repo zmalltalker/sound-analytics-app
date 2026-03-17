@@ -153,4 +153,21 @@ class LoginService {
             print("❌ Logout failed: \(error)")
         }
     }
+
+    /// Get token information for debug display
+    func getTokenInfo() -> TokenInfo? {
+        guard let account = currentAccount else { return nil }
+
+        return TokenInfo(
+            username: account.username,
+            homeAccountId: account.homeAccountId?.identifier ?? "Unknown",
+            environment: account.environment
+        )
+    }
+}
+
+struct TokenInfo {
+    let username: String?
+    let homeAccountId: String
+    let environment: String?
 }
