@@ -38,30 +38,49 @@ final class AudioRecorder: ObservableObject {
         errorMessage = nil
 
         do {
+            print("🎬 Starting recording with settings: \(settings)")
+
             // Configure the audio session with the chosen mic mode.
             let session = AVAudioSession.sharedInstance()
+            print("📱 Setting category...")
             try session.setCategory(.record, mode: settings.micMode.sessionMode, options: [])
+            print("🎚️ Setting sample rate to \(settings.sampleRate.rawValue)...")
             try session.setPreferredSampleRate(settings.sampleRate.rawValue)
-            try session.setPreferredInputNumberOfChannels(settings.channels.rawValue)
+            // Note: We don't set preferred input channels - iOS hardware determines this
+            // The actual channel count will be read from the input format
+            print("✅ Activating session...")
             try session.setActive(true)
 
             let newEngine  = AVAudioEngine()
             let inputNode  = newEngine.inputNode
             let inputFmt   = inputNode.outputFormat(forBus: 0)
 
-            // Use the actual hardware sample rate so AVAudioFile never needs to convert.
-            let fileSettings = settings.fileSettings(actualSampleRate: inputFmt.sampleRate)
+            print("🎵 Input format: \(inputFmt)")
 
             let docs    = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             let name    = "rec_\(Int(Date().timeIntervalSince1970)).\(settings.encoding.fileExtension)"
             let fileURL = docs.appendingPathComponent(name)
 
-            outputFile       = try AVAudioFile(forWriting: fileURL, settings: fileSettings)
+            print("📁 File URL: \(fileURL)")
+
+            // For PCM, write in the same format as the input to avoid conversion errors
+            print("📝 Creating audio file for encoding: \(settings.encoding.rawValue)")
+            if settings.encoding == .pcm {
+                print("   Using input format settings: \(inputFmt.settings)")
+                outputFile = try AVAudioFile(forWriting: fileURL, settings: inputFmt.settings)
+            } else {
+                // For compressed formats (AAC/ALAC), use custom settings
+                let fileSettings = settings.fileSettings(actualSampleRate: inputFmt.sampleRate)
+                print("   Using custom settings: \(fileSettings)")
+                outputFile = try AVAudioFile(forWriting: fileURL, settings: fileSettings)
+            }
+            print("✅ Audio file created successfully")
             lastRecordingURL = fileURL
 
             // Capture what we need from the main-actor context before entering the tap closure.
             let capturedSampleRate = inputFmt.sampleRate
 
+            print("🔌 Installing tap...")
             inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFmt) { [weak self] buffer, _ in
                 // This closure runs on AVAudioEngine's internal thread.
                 try? self?.outputFile?.write(from: buffer)
@@ -73,12 +92,21 @@ final class AudioRecorder: ObservableObject {
                     self?.inputLevel     = level
                 }
             }
+            print("✅ Tap installed")
 
+            print("▶️ Starting engine...")
             try newEngine.start()
+            print("✅ Engine started")
+
             engine      = newEngine
             isRecording = true
 
+            print("🎉 Recording started successfully!")
+
         } catch {
+            print("❌ ERROR: \(error)")
+            print("❌ Error code: \((error as NSError).code)")
+            print("❌ Error domain: \((error as NSError).domain)")
             errorMessage = error.localizedDescription
         }
     }

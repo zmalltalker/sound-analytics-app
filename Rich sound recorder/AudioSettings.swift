@@ -125,9 +125,10 @@ struct AudioSettings {
             AVNumberOfChannelsKey:     channels.rawValue,
         ]
         if encoding == .pcm {
-            s[AVLinearPCMBitDepthKey]    = 24
-            s[AVLinearPCMIsFloatKey]     = false
-            s[AVLinearPCMIsBigEndianKey] = false
+            s[AVLinearPCMBitDepthKey]       = 32
+            s[AVLinearPCMIsFloatKey]        = true
+            s[AVLinearPCMIsBigEndianKey]    = false
+            s[AVLinearPCMIsNonInterleaved]  = false
         }
         return s
     }
