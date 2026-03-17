@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct MainView: View {
-    let loginService: LoginService
+    let loginService: AuthenticationService
     @State private var showProfileSheet = false
 
     var body: some View {
@@ -209,7 +209,7 @@ struct RecordingsTab: View {
 // MARK: - Profile Sheet
 
 struct ProfileSheet: View {
-    let loginService: LoginService
+    let loginService: AuthenticationService
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -332,5 +332,5 @@ struct InfoRow: View {
 }
 
 #Preview {
-    MainView(loginService: LoginService())
+    MainView(loginService: AuthenticationService())
 }

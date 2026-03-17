@@ -10,9 +10,9 @@ import Foundation
 @MainActor
 class APIService {
     let baseURL = "https://webrecorder.rest.dev.edgeaudioanalytics.no/"
-    private let loginService: LoginService
+    private let loginService: AuthenticationService
 
-    init(loginService: LoginService) {
+    init(loginService: AuthenticationService) {
         self.loginService = loginService
     }
 

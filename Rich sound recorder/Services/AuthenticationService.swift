@@ -12,7 +12,7 @@ import SwiftUI
 
 @MainActor
 @Observable
-class LoginService {
+class AuthenticationService {
     private var application: MSALPublicClientApplication?
     private var currentAccount: MSALAccount?
     private(set) var isLoggedIn: Bool = false

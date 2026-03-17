@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var loginService = LoginService()
+    @State private var loginService = AuthenticationService()
     @State private var isCheckingAuth = true
 
     var body: some View {

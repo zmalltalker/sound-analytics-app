@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct WelcomeView: View {
-    let loginService: LoginService
+    let loginService: AuthenticationService
 
     var body: some View {
         ZStack {
@@ -67,5 +67,5 @@ struct WelcomeView: View {
 }
 
 #Preview {
-    WelcomeView(loginService: LoginService())
+    WelcomeView(loginService: AuthenticationService())
 }
