@@ -9,7 +9,7 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var lastRecordingURL: URL?
-    private let loginService = LoginService()
+    @State private var loginService = LoginService()
 
     var body: some View {
         NavigationStack {
