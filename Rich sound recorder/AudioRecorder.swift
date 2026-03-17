@@ -1,5 +1,6 @@
 import AVFoundation
 import Accelerate
+import Combine
 
 /// Drives audio recording via AVAudioEngine and produces real-time FFT data for the UI.
 @MainActor
@@ -148,8 +149,9 @@ final class AudioRecorder: ObservableObject {
         }
 
         // Normalise magnitudes.
-        var scale = Float(1.0 / Float(fftN))
-        vDSP_vsmul(&mags, 1, &scale, &mags, 1, vDSP_Length(halfN))
+        let scale = Float(1.0 / Float(fftN))
+        var normalizedMags = [Float](repeating: 0, count: halfN)
+        vDSP_vsmul(&mags, 1, [scale], &normalizedMags, 1, vDSP_Length(halfN))
 
         // ── Logarithmic band mapping (20 Hz → Nyquist) ──────────────────
         let minFreq: Float = 20
@@ -166,7 +168,7 @@ final class AudioRecorder: ObservableObject {
             let binLow  = max(1, Int(freqLow  / Float(sampleRate) * Float(fftN)))
             let binHigh = max(binLow + 1, min(Int(freqHigh / Float(sampleRate) * Float(fftN)) + 1, halfN))
 
-            let peak = mags[binLow..<binHigh].max() ?? 0
+            let peak = normalizedMags[binLow..<binHigh].max() ?? 0
             // Map −80 dB … 0 dB to 0 … 1.
             let db = 20 * log10(max(peak, 1e-7))
             return max(0, min(1, (db + 80) / 80))
