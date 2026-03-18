@@ -18,12 +18,14 @@ class AuthenticationService {
     private(set) var isLoggedIn: Bool = false
     private(set) var username: String?
 
-    private let scopes = ["User.Read"]
+    private static let TENANT_ID = "7fd16dc5-af0e-4826-adea-022e56bd9f22"
+//    private let scopes = ["User.Read"]
+    private let scopes = ["api://7fd16dc5-af0e-4826-adea-022e56bd9f22/user_impersonation"]
 
     init() {
         do {
             let authority = try MSALAADAuthority(
-                url: URL(string: "https://login.microsoftonline.com/common")!
+                url: URL(string: "https://login.microsoftonline.com/7c595a94-ec31-4674-bd4e-f388f91c5b72/v2.0")!
             )
 
             let config = MSALPublicClientApplicationConfig(
@@ -140,6 +142,7 @@ class AuthenticationService {
             print("✅ Token acquired silently")
             print("   Scopes in token: \(result.scopes)")
             print("   Token expires: \(result.expiresOn ?? Date())")
+            print("Access token: '\(result.accessToken)'")
             completion(result.accessToken)
         }
     }
