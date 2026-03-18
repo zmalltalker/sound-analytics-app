@@ -41,100 +41,68 @@ struct ProjectsTab: View {
     let loginService: AuthenticationService
     @Binding var showProfileSheet: Bool
 
-    @State private var apiService: APIService?
+    @State private var repository: ProjectRepository?
+    @State private var projects: [Project] = []
     @State private var isLoading = false
-    @State private var whoamiResponse: String?
     @State private var errorMessage: String?
+    @State private var showNewProjectSheet = false
 
     var body: some View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
 
-                ScrollView {
-                    VStack(spacing: 24) {
+                Group {
+                    if isLoading {
+                        ProgressView()
+                            .tint(.cyan)
+                    } else if let error = errorMessage {
                         VStack(spacing: 12) {
-                            Image(systemName: "folder.fill")
-                                .font(.system(size: 60))
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.system(size: 40))
+                                .foregroundStyle(.red.opacity(0.7))
+                            Text(error)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 40)
+                            Button("Retry") { fetchProjects() }
+                                .foregroundStyle(.cyan)
+                        }
+                    } else if projects.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "folder")
+                                .font(.system(size: 40))
                                 .foregroundStyle(.cyan.opacity(0.5))
-
-                            Text("Projects")
-                                .font(.title2.weight(.semibold))
-                                .foregroundStyle(.primary)
+                            Text("No projects found")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
                         }
-                        .padding(.top, 20)
-
-                        // Whoami API Test Button
-                        Button {
-                            callWhoami()
-                        } label: {
-                            HStack(spacing: 12) {
-                                if isLoading {
-                                    ProgressView()
-                                        .tint(.black)
-                                } else {
-                                    Image(systemName: "person.text.rectangle")
-                                        .font(.title3)
+                    } else {
+                        List {
+                            ForEach(projects) { project in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(project.name)
+                                        .font(.body.weight(.medium))
+                                        .foregroundStyle(.primary)
+                                    if !project.description.isEmpty {
+                                        Text(project.description)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
                                 }
-                                Text(isLoading ? "Loading..." : "Call /whoami")
-                                    .font(.headline)
+                                .listRowBackground(Color.white.opacity(0.06))
+                                .swipeActions(edge: .trailing) {
+                                    Button(role: .destructive) {
+                                        deleteProject(project)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
                             }
-                            .foregroundStyle(.black)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(Color.cyan)
-                            )
-                            .padding(.horizontal, 40)
                         }
-                        .disabled(isLoading)
-
-                        // Display Response
-                        if let response = whoamiResponse {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("API Response")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(.secondary)
-                                    .textCase(.uppercase)
-                                    .tracking(0.5)
-
-                                Text(response)
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.cyan)
-                                    .padding(16)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .fill(Color.white.opacity(0.06))
-                                    )
-                            }
-                            .padding(.horizontal, 20)
-                        }
-
-                        // Display Error
-                        if let error = errorMessage {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Error")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(.red)
-                                    .textCase(.uppercase)
-                                    .tracking(0.5)
-
-                                Text(error)
-                                    .font(.caption)
-                                    .foregroundStyle(.red)
-                                    .padding(16)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .fill(Color.red.opacity(0.1))
-                                    )
-                            }
-                            .padding(.horizontal, 20)
-                        }
+                        .listStyle(.insetGrouped)
+                        .scrollContentBackground(.hidden)
                     }
                 }
             }
@@ -151,32 +119,133 @@ struct ProjectsTab: View {
                             .foregroundStyle(.cyan)
                     }
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showNewProjectSheet = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .foregroundStyle(.cyan)
+                    }
+                }
+            }
+            .sheet(isPresented: $showNewProjectSheet) {
+                if let repository {
+                    NewProjectSheet(repository: repository) {
+                        fetchProjects()
+                    }
+                }
             }
             .task {
-                apiService = APIService(loginService: loginService)
+                repository = ProjectRepository(loginService: loginService)
+                fetchProjects()
             }
         }
     }
 
-    private func callWhoami() {
-        guard let apiService = apiService else { return }
+    private func deleteProject(_ project: Project) {
+        guard let repository else { return }
+        projects.removeAll { $0.id == project.id }
+        Task {
+            do {
+                try await repository.delete(project)
+            } catch {
+                projects.append(project)
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func fetchProjects() {
+        guard let repository else { return }
 
         isLoading = true
         errorMessage = nil
-        whoamiResponse = nil
 
         Task {
             do {
-                let data = try await apiService.get(path: "whoami")
-                if let responseString = String(data: data, encoding: .utf8) {
-                    whoamiResponse = responseString
-                } else {
-                    whoamiResponse = "Received \(data.count) bytes (not UTF-8)"
-                }
+                projects = try await repository.list()
             } catch {
                 errorMessage = error.localizedDescription
             }
             isLoading = false
+        }
+    }
+}
+
+// MARK: - New Project Sheet
+
+struct NewProjectSheet: View {
+    let repository: ProjectRepository
+    let onCreated: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var description = ""
+    @State private var isSubmitting = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+
+                Form {
+                    Section {
+                        TextField("Name", text: $name)
+                        TextField("Description", text: $description)
+                    }
+                    .listRowBackground(Color.white.opacity(0.06))
+
+                    if let error = errorMessage {
+                        Section {
+                            Text(error)
+                                .foregroundStyle(.red)
+                                .font(.caption)
+                        }
+                        .listRowBackground(Color.red.opacity(0.1))
+                    }
+                }
+                .scrollContentBackground(.hidden)
+            }
+            .navigationTitle("New Project")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(.cyan)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isSubmitting {
+                        ProgressView().tint(.cyan)
+                    } else {
+                        Button("Create") { createProject() }
+                            .foregroundStyle(.cyan)
+                            .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .presentationDetents([.medium])
+    }
+
+    private func createProject() {
+        isSubmitting = true
+        errorMessage = nil
+
+        Task {
+            do {
+                try await repository.create(
+                    name: name.trimmingCharacters(in: .whitespaces),
+                    description: description.trimmingCharacters(in: .whitespaces)
+                )
+                onCreated()
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isSubmitting = false
         }
     }
 }
