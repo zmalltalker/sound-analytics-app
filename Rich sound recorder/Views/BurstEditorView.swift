@@ -12,6 +12,10 @@ struct BurstEditorView: View {
     @State private var exportError: String?
     @State private var exportedURL: URL?
     @State private var showExportSuccess = false
+    @State private var timelineZoom: CGFloat = 1.0
+    @GestureState private var pinchScale: CGFloat = 1.0
+
+    private var effectiveZoom: CGFloat { timelineZoom * pinchScale }
 
     init(analysis: BurstAnalysis = .sample) {
         _analysis = State(initialValue: analysis)
@@ -92,38 +96,45 @@ struct BurstEditorView: View {
 
     private var timelineSection: some View {
         GeometryReader { geo in
-            ZStack(alignment: .topLeading) {
-                Color(white: 0.05)
-                // track line
-                Rectangle()
-                    .fill(Color(white: 0.15))
-                    .frame(height: 2)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 34)
+            // baseScale fits the whole recording into the visible width at zoom 1×
+            let baseScale = (geo.size.width - 24) / max(analysis.duration, 0.001)
+            let scale     = baseScale * effectiveZoom
+            let contentW  = max(geo.size.width, CGFloat(analysis.duration) * scale + 24)
 
-                ForEach(analysis.chunks) { chunk in
-                    timelineChip(chunk: chunk, totalWidth: geo.size.width - 24)
+            ScrollView(.horizontal, showsIndicators: false) {
+                ZStack(alignment: .topLeading) {
+                    // Centre track line (y = 43 = half of 88pt section)
+                    Rectangle()
+                        .fill(Color(white: 0.15))
+                        .frame(width: contentW, height: 2)
+                        .offset(y: 43)
+
+                    ForEach($analysis.chunks) { $chunk in
+                        TimelineChipView(
+                            chunk: $chunk,
+                            scale: scale,
+                            totalDuration: analysis.duration,
+                            isSelected: chunk.id == selectedChunkID,
+                            onSelect: { selectedChunkID = chunk.id }
+                        )
+                    }
                 }
+                .frame(width: contentW, height: 88)
+                .background(Color(white: 0.05))
             }
-            .padding(.horizontal, 12)
+            // Pinch-to-zoom: two fingers spread = zoom in, pinch = zoom out.
+            // simultaneousGesture lets horizontal scroll work at the same time.
+            .simultaneousGesture(
+                MagnificationGesture()
+                    .updating($pinchScale) { value, state, _ in
+                        state = value
+                    }
+                    .onEnded { value in
+                        timelineZoom = max(0.5, min(20.0, timelineZoom * value))
+                    }
+            )
         }
-        .frame(height: 72)
-        .padding(.vertical, 8)
-    }
-
-    private func timelineChip(chunk: BurstChunk, totalWidth: CGFloat) -> some View {
-        let scale = totalWidth / max(analysis.duration, 0.001)
-        let x = chunk.startTime * scale
-        let w = max(chunk.duration * scale, 6)
-        let isSelected = chunk.id == selectedChunkID
-        let color: Color = chunk.label.isEmpty ? .orange : .cyan
-
-        return RoundedRectangle(cornerRadius: 3)
-            .fill(color.opacity(isSelected ? 0.9 : 0.45))
-            .overlay(RoundedRectangle(cornerRadius: 3).stroke(color, lineWidth: isSelected ? 1.5 : 0))
-            .frame(width: w, height: 28)
-            .offset(x: x, y: 20)
-            .onTapGesture { selectedChunkID = chunk.id }
+        .frame(height: 88)
     }
 
     // MARK: Chunk list
@@ -187,6 +198,87 @@ struct BurstEditorView: View {
 
     private var exportFilename: String {
         "burst_\(analysis.source.replacingOccurrences(of: ".wav", with: "").replacingOccurrences(of: ".m4a", with: "")).json"
+    }
+}
+
+// MARK: - Timeline chip with draggable left/right handles
+
+struct TimelineChipView: View {
+    @Binding var chunk: BurstChunk
+    let scale: CGFloat          // points per second
+    let totalDuration: Double
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    private let handleW: CGFloat = 14
+    private let chipH: CGFloat  = 36
+    private let minDur: Double  = 0.02
+
+    // Anchor times captured at the start of each drag so we compute a clean delta
+    @State private var leftAnchor: Double?  = nil
+    @State private var rightAnchor: Double? = nil
+
+    var body: some View {
+        let startX = CGFloat(chunk.startTime) * scale
+        let width  = max(CGFloat(chunk.duration) * scale, handleW * 2 + 4)
+        let chipY  = CGFloat(43) - chipH / 2   // vertically centred on the track line
+        let color: Color = chunk.label.isEmpty ? .orange : .cyan
+
+        ZStack(alignment: .leading) {
+            // Body — tap to select
+            RoundedRectangle(cornerRadius: 4)
+                .fill(color.opacity(isSelected ? 0.35 : 0.18))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(color.opacity(isSelected ? 0.9 : 0.45), lineWidth: 1)
+                )
+                .contentShape(Rectangle())
+                .onTapGesture { onSelect() }
+
+            // Left handle — drag to move startTime
+            handlePill(color: color)
+                .frame(maxHeight: .infinity, alignment: .leading)
+                .gesture(leftDragGesture)
+
+            // Right handle — drag to move endTime
+            handlePill(color: color)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                .gesture(rightDragGesture)
+        }
+        .frame(width: width, height: chipH)
+        .offset(x: startX, y: chipY)
+    }
+
+    // A rounded pill with a small white grip line in the centre
+    private func handlePill(color: Color) -> some View {
+        RoundedRectangle(cornerRadius: 3)
+            .fill(color.opacity(0.8))
+            .frame(width: handleW)
+            .overlay(
+                Capsule()
+                    .fill(Color.white.opacity(0.6))
+                    .frame(width: 2, height: chipH * 0.42)
+            )
+    }
+
+    private var leftDragGesture: some Gesture {
+        DragGesture(minimumDistance: 1)
+            .onChanged { value in
+                if leftAnchor == nil { leftAnchor = chunk.startTime }
+                let dt = Double(value.translation.width / scale)
+                chunk.startTime = max(0, min(chunk.endTime - minDur, leftAnchor! + dt))
+            }
+            .onEnded { _ in leftAnchor = nil }
+    }
+
+    private var rightDragGesture: some Gesture {
+        DragGesture(minimumDistance: 1)
+            .onChanged { value in
+                if rightAnchor == nil { rightAnchor = chunk.endTime }
+                let dt = Double(value.translation.width / scale)
+                chunk.endTime = max(chunk.startTime + minDur, min(totalDuration, rightAnchor! + dt))
+            }
+            .onEnded { _ in rightAnchor = nil }
     }
 }
 
