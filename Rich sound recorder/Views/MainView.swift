@@ -272,6 +272,29 @@ struct RecordingsTab: View {
                         .padding(.horizontal, 40)
                     }
 
+                    NavigationLink {
+                        BurstEditorView()
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "waveform.badge.magnifyingglass")
+                                .font(.title3)
+                            Text("Try Burst Mode")
+                                .font(.headline)
+                        }
+                        .foregroundStyle(.cyan)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color.cyan.opacity(0.12))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .stroke(Color.cyan.opacity(0.4), lineWidth: 1)
+                                )
+                        )
+                        .padding(.horizontal, 40)
+                    }
+
                     if let url = lastRecordingURL {
                         VStack(spacing: 8) {
                             Text("Last Recording")
