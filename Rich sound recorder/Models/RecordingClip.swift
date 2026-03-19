@@ -18,6 +18,10 @@ struct RecordingClip: Identifiable {
     let sampleRate: Double?
     let dataVersion: String?
 
+    var canExportAudio: Bool {
+        samplesHex != nil && sampleRate != nil
+    }
+
     init(record: AnnotatedAudioDataRecord) {
         let eventDetails = EventLabelDetails(jsonString: record.eventLabel)
 

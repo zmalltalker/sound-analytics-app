@@ -8,13 +8,6 @@
 import SwiftUI
 import AVFoundation
 
-struct CompletedRecording {
-    let fileURL: URL
-    let startTimestamp: Int
-    let endTimestamp: Int
-    let audioEndTimestamp: Double
-}
-
 struct RecordingView: View {
     @StateObject private var recorder = AudioRecorder()
     @State private var settings       = AudioSettings()

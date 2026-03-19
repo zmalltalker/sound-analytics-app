@@ -9,6 +9,7 @@ import Foundation
 
 @MainActor
 class RecordingListRepository {
+    private let isDebugLoggingEnabled = false
     private let apiService: APIService
 
     init(loginService: AuthenticationService) {
@@ -35,35 +36,12 @@ class RecordingListRepository {
         debugResponse(response)
 
         if let avroRecords = try? AvroContainerHeader.decodeAnnotatedAudioDataRecords(from: response.data) {
-            print("   Avro records decoded: \(avroRecords.count)")
-            for (index, record) in avroRecords.prefix(3).enumerated() {
-                let samplesPreview: String
-                if let inputSamples = record.audioSnippet.inputSamples {
-                    let prefix = String(inputSamples.prefix(120))
-                    let middleStart = max(0, (inputSamples.count / 2) - 60)
-                    let middleEnd = min(inputSamples.count, middleStart + 120)
-                    let middle = String(inputSamples[inputSamples.index(inputSamples.startIndex, offsetBy: middleStart)..<inputSamples.index(inputSamples.startIndex, offsetBy: middleEnd)])
-                    let suffix = String(inputSamples.suffix(120))
-                    let distinctCharacters = Set(inputSamples.prefix(4000)).sorted()
-                    let distinctPreview = String(distinctCharacters.prefix(20))
-                    let decodedDoubles = decodeHexDoublesPreview(from: inputSamples)
-
-                    samplesPreview = """
-                    present (\(inputSamples.count) chars)
-                     start=\(prefix)
-                     middle=\(middle)
-                     end=\(suffix)
-                     distinct(first 4000)=\(distinctPreview)
-                     doubles(first 8)=\(decodedDoubles)
-                    """
-                } else {
-                    samplesPreview = "nil"
-                }
-
-                print("   Record \(index + 1): data_id=\(record.audioSnippet.dataID), event_label=\(record.eventLabel), total_period=\(record.audioSnippet.inputTotalPeriod ?? "nil"), sample_rate=\(record.audioSnippet.theoreticalSampleRate?.description ?? "nil"), quality=\(record.audioSnippet.quality), input_samples=\(samplesPreview)")
-            }
             let groupedRecords = groupByDataID(records: avroRecords)
-            print("   Avro record groups: \(groupedRecords.count)")
+            if isDebugLoggingEnabled {
+                print("   Avro records decoded: \(avroRecords.count)")
+                print("   Avro record groups: \(groupedRecords.count)")
+                logRecordPreview(avroRecords)
+            }
             return groupedRecords.map { records in
                 RecordingClipGroup(versions: records.map(RecordingClip.init(record:)))
             }
@@ -78,6 +56,8 @@ class RecordingListRepository {
     }
 
     private func debugResponse(_ response: APIService.APIResponse) {
+        guard isDebugLoggingEnabled else { return }
+
         let contentType = response.httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "unknown"
         let utf8Preview = String(data: response.data.prefix(200), encoding: .utf8)
         let hexPreview = response.data.prefix(32).map { String(format: "%02x", $0) }.joined(separator: " ")
@@ -103,6 +83,41 @@ class RecordingListRepository {
         } catch {
             print("   Avro header parse: failed (\(error))")
         }
+    }
+
+    private func logRecordPreview(_ records: [AnnotatedAudioDataRecord]) {
+        for (index, record) in records.prefix(3).enumerated() {
+            print(
+                "   Record \(index + 1): data_id=\(record.audioSnippet.dataID), " +
+                "data_version=\(record.audioSnippet.dataVersion), " +
+                "total_period=\(record.audioSnippet.inputTotalPeriod ?? "nil"), " +
+                "sample_rate=\(record.audioSnippet.theoreticalSampleRate?.description ?? "nil"), " +
+                "quality=\(record.audioSnippet.quality), " +
+                "input_samples=\(samplePreview(for: record.audioSnippet.inputSamples))"
+            )
+        }
+    }
+
+    private func samplePreview(for inputSamples: String?) -> String {
+        guard let inputSamples else { return "nil" }
+
+        let prefix = String(inputSamples.prefix(120))
+        let middleStart = max(0, (inputSamples.count / 2) - 60)
+        let middleEnd = min(inputSamples.count, middleStart + 120)
+        let middle = String(inputSamples[inputSamples.index(inputSamples.startIndex, offsetBy: middleStart)..<inputSamples.index(inputSamples.startIndex, offsetBy: middleEnd)])
+        let suffix = String(inputSamples.suffix(120))
+        let distinctCharacters = Set(inputSamples.prefix(4000)).sorted()
+        let distinctPreview = String(distinctCharacters.prefix(20))
+        let decodedDoubles = decodeHexDoublesPreview(from: inputSamples)
+
+        return """
+        present (\(inputSamples.count) chars)
+         start=\(prefix)
+         middle=\(middle)
+         end=\(suffix)
+         distinct(first 4000)=\(distinctPreview)
+         doubles(first 8)=\(decodedDoubles)
+        """
     }
 
     private func decodeHexDoublesPreview(from hexString: String) -> String {
