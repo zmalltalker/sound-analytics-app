@@ -682,12 +682,13 @@ struct RecordingsTab: View {
     @State private var isUploading = false
     @State private var uploadMessage: String?
     @State private var uploadError: String?
-    @State private var clips: [RecordingClip] = []
+    @State private var clips: [RecordingClipGroup] = []
     @State private var isLoadingClips = false
     @State private var clipsError: String?
     @State private var exportMessage: String?
     @State private var exportError: String?
     @State private var audioPlayer: AVAudioPlayer?
+    @State private var selectedClipGroup: RecordingClipGroup?
 
     init(loginService: AuthenticationService, showProfileSheet: Binding<Bool>) {
         _showProfileSheet = showProfileSheet
@@ -837,33 +838,27 @@ struct RecordingsTab: View {
                             Text("No clips returned by the API")
                                 .foregroundStyle(.secondary)
                         } else {
-                            ForEach(clips) { clip in
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(clip.title)
-                                        .font(.body.weight(.medium))
-                                        .foregroundStyle(.primary)
-                                    if let subtitle = clip.subtitle {
-                                        Text(subtitle)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    if clip.samplesHex != nil, clip.sampleRate != nil {
-                                        HStack(spacing: 16) {
-                                            Button("Export WAV") {
-                                                exportWAV(for: clip)
-                                            }
-                                            .font(.caption.weight(.medium))
-                                            .foregroundStyle(.cyan)
-
-                                            Button("Play") {
-                                                playClip(clip)
-                                            }
-                                            .font(.caption.weight(.medium))
-                                            .foregroundStyle(.cyan)
+                            ForEach(clips) { clipGroup in
+                                Button {
+                                    selectedClipGroup = clipGroup
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text(clipGroup.title)
+                                            .font(.body.weight(.medium))
+                                            .foregroundStyle(.primary)
+                                        if let subtitle = clipGroup.subtitle {
+                                            Text(subtitle)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
                                         }
+                                        Text(clipGroup.versionsCountText)
+                                            .font(.caption2)
+                                            .foregroundStyle(.cyan)
                                     }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.vertical, 4)
                                 }
-                                .padding(.vertical, 4)
+                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -895,6 +890,17 @@ struct RecordingsTab: View {
                     },
                     onUpload: {
                         uploadPendingRecording()
+                    }
+                )
+            }
+            .sheet(item: $selectedClipGroup) { clipGroup in
+                RecordingVersionsSheet(
+                    clipGroup: clipGroup,
+                    onExport: { clip in
+                        exportWAV(for: clip)
+                    },
+                    onPlay: { clip in
+                        playClip(clip)
                     }
                 )
             }
@@ -1016,6 +1022,84 @@ struct RecordingsTab: View {
         } catch {
             exportError = error.localizedDescription
         }
+    }
+}
+
+struct RecordingVersionsSheet: View {
+    let clipGroup: RecordingClipGroup
+    let onExport: (RecordingClip) -> Void
+    let onPlay: (RecordingClip) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Recording") {
+                    Text(clipGroup.title)
+                        .foregroundStyle(.primary)
+                    Text(clipGroup.versionsCountText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .listRowBackground(Color.white.opacity(0.06))
+
+                Section("Versions") {
+                    ForEach(Array(clipGroup.versions.enumerated()), id: \.offset) { index, clip in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Version \(index + 1)")
+                                .font(.body.weight(.medium))
+                                .foregroundStyle(.primary)
+
+                            if let dataVersion = clip.dataVersion {
+                                Text(dataVersion)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            if let subtitle = clip.subtitle {
+                                Text(subtitle)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            if clip.samplesHex != nil, clip.sampleRate != nil {
+                                HStack(spacing: 16) {
+                                    Button("Export WAV") {
+                                        onExport(clip)
+                                    }
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.cyan)
+
+                                    Button("Play") {
+                                        onPlay(clip)
+                                    }
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.cyan)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                .listRowBackground(Color.white.opacity(0.06))
+            }
+            .scrollContentBackground(.hidden)
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle("Versions")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .foregroundStyle(.cyan)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .presentationDetents([.medium, .large])
     }
 }
 

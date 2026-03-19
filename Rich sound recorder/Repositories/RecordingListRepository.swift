@@ -15,7 +15,7 @@ class RecordingListRepository {
         self.apiService = APIService(loginService: loginService)
     }
 
-    func list(start: Int = 0, end: Int = Int(Date().timeIntervalSince1970), labelUID: String? = nil) async throws -> [RecordingClip] {
+    func list(start: Int = 0, end: Int = Int(Date().timeIntervalSince1970), labelUID: String? = nil) async throws -> [RecordingClipGroup] {
         var components = URLComponents()
         components.queryItems = [
             URLQueryItem(name: "start", value: String(start)),
@@ -62,15 +62,19 @@ class RecordingListRepository {
 
                 print("   Record \(index + 1): data_id=\(record.audioSnippet.dataID), event_label=\(record.eventLabel), total_period=\(record.audioSnippet.inputTotalPeriod ?? "nil"), sample_rate=\(record.audioSnippet.theoreticalSampleRate?.description ?? "nil"), quality=\(record.audioSnippet.quality), input_samples=\(samplesPreview)")
             }
-            let deduplicatedRecords = deduplicateByDataID(records: avroRecords)
-            print("   Avro records after deduplication: \(deduplicatedRecords.count)")
-            return deduplicatedRecords.map(RecordingClip.init(record:))
+            let groupedRecords = groupByDataID(records: avroRecords)
+            print("   Avro record groups: \(groupedRecords.count)")
+            return groupedRecords.map { records in
+                RecordingClipGroup(versions: records.map(RecordingClip.init(record:)))
+            }
         }
 
         let jsonObject = try JSONSerialization.jsonObject(with: response.data)
         guard let array = jsonObject as? [Any] else { return [] }
 
-        return array.compactMap(RecordingClip.init(jsonObject:))
+        return array
+            .compactMap(RecordingClip.init(jsonObject:))
+            .map { RecordingClipGroup(versions: [$0]) }
     }
 
     private func debugResponse(_ response: APIService.APIResponse) {
@@ -145,18 +149,19 @@ class RecordingListRepository {
         return data
     }
 
-    private func deduplicateByDataID(records: [AnnotatedAudioDataRecord]) -> [AnnotatedAudioDataRecord] {
-        var latestByDataID: [String: AnnotatedAudioDataRecord] = [:]
+    private func groupByDataID(records: [AnnotatedAudioDataRecord]) -> [[AnnotatedAudioDataRecord]] {
+        var groupedByDataID: [String: [AnnotatedAudioDataRecord]] = [:]
         var orderedDataIDs: [String] = []
 
         for record in records {
             let dataID = record.audioSnippet.dataID
-            if latestByDataID[dataID] == nil {
+            if groupedByDataID[dataID] == nil {
                 orderedDataIDs.append(dataID)
+                groupedByDataID[dataID] = []
             }
-            latestByDataID[dataID] = record
+            groupedByDataID[dataID]?.append(record)
         }
 
-        return orderedDataIDs.compactMap { latestByDataID[$0] }
+        return orderedDataIDs.compactMap { groupedByDataID[$0] }
     }
 }
