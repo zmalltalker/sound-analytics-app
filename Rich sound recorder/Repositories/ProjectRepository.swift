@@ -11,6 +11,10 @@ import Foundation
 class ProjectRepository {
     private let apiService: APIService
 
+    private struct UIDsRequest: Encodable {
+        let uids: [String]
+    }
+
     init(loginService: AuthenticationService) {
         self.apiService = APIService(loginService: loginService)
     }
@@ -36,5 +40,12 @@ class ProjectRepository {
 
     func delete(_ project: Project) async throws {
         try await apiService.postEmpty(path: "projects/\(project.uid)/delete")
+    }
+
+    func addLabels(projectUID: String, labelUIDs: [String]) async throws {
+        try await apiService.post(
+            path: "projects/\(projectUID)/add_labels",
+            body: UIDsRequest(uids: labelUIDs)
+        )
     }
 }

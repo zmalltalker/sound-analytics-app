@@ -42,6 +42,7 @@ struct ProjectsTab: View {
     @Binding var showProfileSheet: Bool
 
     @State private var repository: ProjectRepository?
+    @State private var labelRepository: LabelRepository?
     @State private var projects: [Project] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -81,15 +82,12 @@ struct ProjectsTab: View {
                     } else {
                         List {
                             ForEach(projects) { project in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(project.name)
-                                        .font(.body.weight(.medium))
-                                        .foregroundStyle(.primary)
-                                    if !project.description.isEmpty {
-                                        Text(project.description)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
+                                ProjectListRow(
+                                    project: project,
+                                    projectRepository: repository,
+                                    labelRepository: labelRepository
+                                ) { updatedProject in
+                                    replaceProject(updatedProject)
                                 }
                                 .listRowBackground(Color.white.opacity(0.06))
                                 .swipeActions(edge: .trailing) {
@@ -137,6 +135,7 @@ struct ProjectsTab: View {
             }
             .task {
                 repository = ProjectRepository(loginService: loginService)
+                labelRepository = LabelRepository(loginService: loginService)
                 fetchProjects()
             }
         }
@@ -169,6 +168,234 @@ struct ProjectsTab: View {
             }
             isLoading = false
         }
+    }
+
+    private func replaceProject(_ project: Project) {
+        guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
+        projects[index] = project
+    }
+}
+
+struct ProjectListRow: View {
+    let project: Project
+    let projectRepository: ProjectRepository?
+    let labelRepository: LabelRepository?
+    let onProjectUpdated: (Project) -> Void
+
+    var body: some View {
+        if let projectRepository, let labelRepository {
+            NavigationLink {
+                ProjectDetailView(
+                    project: project,
+                    projectRepository: projectRepository,
+                    labelRepository: labelRepository,
+                    onProjectUpdated: onProjectUpdated
+                )
+            } label: {
+                ProjectRow(project: project)
+            }
+        } else {
+            ProjectRow(project: project)
+        }
+    }
+}
+
+struct ProjectRow: View {
+    let project: Project
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(project.name)
+                .font(.body.weight(.medium))
+                .foregroundStyle(.primary)
+
+            if !project.description.isEmpty {
+                Text(project.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("\(project.labelUIDs.count) label\(project.labelUIDs.count == 1 ? "" : "s")")
+                .font(.caption2)
+                .foregroundStyle(.cyan)
+        }
+    }
+}
+
+struct ProjectDetailView: View {
+    let projectRepository: ProjectRepository
+    let labelRepository: LabelRepository
+    let onProjectUpdated: (Project) -> Void
+
+    @State private var project: Project
+    @State private var availableLabels: [RecorderLabel] = []
+    @State private var isLoadingLabels = true
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+    @State private var successMessage: String?
+
+    init(
+        project: Project,
+        projectRepository: ProjectRepository,
+        labelRepository: LabelRepository,
+        onProjectUpdated: @escaping (Project) -> Void
+    ) {
+        self.projectRepository = projectRepository
+        self.labelRepository = labelRepository
+        self.onProjectUpdated = onProjectUpdated
+        _project = State(initialValue: project)
+    }
+
+    var body: some View {
+        List {
+            Section("Project") {
+                LabeledContent("Name", value: project.name)
+                LabeledContent("Description", value: project.description.isEmpty ? "No description" : project.description)
+                LabeledContent("Assigned Labels", value: "\(project.labelUIDs.count)")
+            }
+            .listRowBackground(Color.white.opacity(0.06))
+
+            if let successMessage {
+                Section {
+                    Text(successMessage)
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                }
+                .listRowBackground(Color.green.opacity(0.12))
+            }
+
+            if let errorMessage {
+                Section {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+                .listRowBackground(Color.red.opacity(0.12))
+            }
+
+            Section("Labels") {
+                if isLoadingLabels {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .tint(.cyan)
+                        Spacer()
+                    }
+                } else if availableLabels.isEmpty {
+                    Text("No labels available")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(availableLabels) { label in
+                        LabelAssignmentRow(
+                            label: label,
+                            isAssigned: project.labelUIDs.contains(label.uid),
+                            isSaving: isSaving,
+                            onAssign: { assign(label) }
+                        )
+                    }
+                }
+            }
+            .listRowBackground(Color.white.opacity(0.06))
+        }
+        .scrollContentBackground(.hidden)
+        .background(Color.black.ignoresSafeArea())
+        .navigationTitle(project.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .task {
+            await loadLabels()
+        }
+    }
+
+    private func loadLabels() async {
+        isLoadingLabels = true
+        errorMessage = nil
+
+        do {
+            availableLabels = try await labelRepository.list()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        isLoadingLabels = false
+    }
+
+    private func assign(_ label: RecorderLabel) {
+        guard !project.labelUIDs.contains(label.uid) else { return }
+
+        isSaving = true
+        errorMessage = nil
+        successMessage = nil
+
+        Task {
+            let updatedLabelUIDs = project.labelUIDs + [label.uid]
+
+            do {
+                try await projectRepository.addLabels(projectUID: project.uid, labelUIDs: [label.uid])
+                let updatedProject = Project(
+                    uid: project.uid,
+                    name: project.name,
+                    description: project.description,
+                    owner_uid: project.owner_uid,
+                    labels: encodedArray(updatedLabelUIDs),
+                    guests_uids: project.guests_uids,
+                    input_download_response: project.input_download_response
+                )
+                project = updatedProject
+                onProjectUpdated(updatedProject)
+                successMessage = "\"\(label.name)\" assigned"
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+
+            isSaving = false
+        }
+    }
+
+    private func encodedArray(_ values: [String]) -> String {
+        guard let data = try? JSONEncoder().encode(values),
+              let string = String(data: data, encoding: .utf8) else {
+            return "[]"
+        }
+        return string
+    }
+}
+
+struct LabelAssignmentRow: View {
+    let label: RecorderLabel
+    let isAssigned: Bool
+    let isSaving: Bool
+    let onAssign: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label.name)
+                    .foregroundStyle(.primary)
+
+                if !label.description.isEmpty {
+                    Text(label.description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+
+            if isAssigned {
+                Label("Assigned", systemImage: "checkmark.circle.fill")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.green)
+            } else if isSaving {
+                ProgressView()
+                    .tint(.cyan)
+            } else {
+                Button("Assign", action: onAssign)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.cyan)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

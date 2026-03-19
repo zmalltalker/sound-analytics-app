@@ -17,4 +17,17 @@ struct Project: Identifiable, Codable {
     let input_download_response: String?
 
     var id: String { uid }
+
+    var labelUIDs: [String] {
+        parseJSONArray(from: labels)
+    }
+
+    var guestUIDs: [String] {
+        parseJSONArray(from: guests_uids)
+    }
+
+    private func parseJSONArray(from value: String) -> [String] {
+        guard let data = value.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
+    }
 }
