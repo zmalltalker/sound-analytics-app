@@ -23,7 +23,7 @@ class ProjectRepository {
     func create(name: String, description: String) async throws {
         let user = try await apiService.whoami()
         let project = Project(
-            uid: UUID().uuidString,
+            uid: UUID().uuidString.lowercased(),
             name: name,
             description: description,
             owner_uid: user.oid,

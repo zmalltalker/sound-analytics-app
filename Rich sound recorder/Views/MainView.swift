@@ -18,7 +18,7 @@ struct MainView: View {
                     Label("Projects", systemImage: "folder.fill")
                 }
 
-            LabelsTab(showProfileSheet: $showProfileSheet)
+            LabelsTab(loginService: loginService, showProfileSheet: $showProfileSheet)
                 .tabItem {
                     Label("Labels", systemImage: "tag.fill")
                 }
@@ -253,25 +253,54 @@ struct NewProjectSheet: View {
 // MARK: - Labels Tab
 
 struct LabelsTab: View {
+    let loginService: AuthenticationService
     @Binding var showProfileSheet: Bool
+
+    @State private var repository: LabelRepository?
+    @State private var labels: [RecorderLabel] = []
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+    @State private var showNewLabelSheet = false
 
     var body: some View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
 
-                VStack(spacing: 20) {
-                    Image(systemName: "tag.fill")
-                        .font(.system(size: 60))
-                        .foregroundStyle(.cyan.opacity(0.5))
-
-                    Text("Labels")
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(.primary)
-
-                    Text("Coming soon")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                Group {
+                    if isLoading {
+                        ProgressView()
+                            .tint(.cyan)
+                    } else if let error = errorMessage {
+                        VStack(spacing: 12) {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.system(size: 40))
+                                .foregroundStyle(.red.opacity(0.7))
+                            Text(error)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 40)
+                            Button("Retry") { fetchLabels() }
+                                .foregroundStyle(.cyan)
+                        }
+                    } else if labels.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "tag")
+                                .font(.system(size: 40))
+                                .foregroundStyle(.cyan.opacity(0.5))
+                            Text("No labels found")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        List(labels) { label in
+                            Text(label.name)
+                                .listRowBackground(Color.white.opacity(0.06))
+                        }
+                        .listStyle(.insetGrouped)
+                        .scrollContentBackground(.hidden)
+                    }
                 }
             }
             .navigationTitle("Labels")
@@ -287,7 +316,121 @@ struct LabelsTab: View {
                             .foregroundStyle(.cyan)
                     }
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showNewLabelSheet = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .foregroundStyle(.cyan)
+                    }
+                }
             }
+            .sheet(isPresented: $showNewLabelSheet) {
+                if let repository {
+                    NewLabelSheet(repository: repository) {
+                        fetchLabels()
+                    }
+                }
+            }
+            .task {
+                repository = LabelRepository(loginService: loginService)
+                fetchLabels()
+            }
+        }
+    }
+
+    private func fetchLabels() {
+        guard let repository else { return }
+        isLoading = true
+        errorMessage = nil
+        Task {
+            do {
+                labels = try await repository.list()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isLoading = false
+        }
+    }
+}
+
+// MARK: - New Label Sheet
+
+struct NewLabelSheet: View {
+    let repository: LabelRepository
+    let onCreated: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var description = ""
+    @State private var durationSeconds = ""
+    @State private var isSubmitting = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+
+                Form {
+                    Section {
+                        TextField("Name", text: $name)
+                        TextField("Description", text: $description)
+                        TextField("Duration (seconds)", text: $durationSeconds)
+                            .keyboardType(.decimalPad)
+                    }
+                    .listRowBackground(Color.white.opacity(0.06))
+
+                    if let error = errorMessage {
+                        Section {
+                            Text(error)
+                                .foregroundStyle(.red)
+                                .font(.caption)
+                        }
+                        .listRowBackground(Color.red.opacity(0.1))
+                    }
+                }
+                .scrollContentBackground(.hidden)
+            }
+            .navigationTitle("New Label")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(.cyan)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isSubmitting {
+                        ProgressView().tint(.cyan)
+                    } else {
+                        Button("Create") { createLabel() }
+                            .foregroundStyle(.cyan)
+                            .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .presentationDetents([.medium])
+    }
+
+    private func createLabel() {
+        isSubmitting = true
+        errorMessage = nil
+        Task {
+            do {
+                try await repository.create(
+                    name: name.trimmingCharacters(in: .whitespaces),
+                    description: description.trimmingCharacters(in: .whitespaces),
+                    durationSeconds: Double(durationSeconds) ?? 0
+                )
+                onCreated()
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isSubmitting = false
         }
     }
 }
