@@ -5,6 +5,7 @@
 //  Created by Marius Mathiesen on 17/03/2026.
 //
 
+import AVFoundation
 import SwiftUI
 
 struct MainView: View {
@@ -23,7 +24,7 @@ struct MainView: View {
                     Label("Labels", systemImage: "tag.fill")
                 }
 
-            RecordingsTab(showProfileSheet: $showProfileSheet)
+            RecordingsTab(loginService: loginService, showProfileSheet: $showProfileSheet)
                 .tabItem {
                     Label("Recordings", systemImage: "waveform")
                 }
@@ -666,75 +667,246 @@ struct NewLabelSheet: View {
 
 struct RecordingsTab: View {
     @Binding var showProfileSheet: Bool
+
+    private let repository: RecordingRepository
+    private let listRepository: RecordingListRepository
+    private let labelRepository: LabelRepository
+    private let wavExportService = RecordingWAVExportService()
     @State private var lastRecordingURL: URL?
+    @State private var pendingRecording: CompletedRecording?
+    @State private var availableLabels: [RecorderLabel] = []
+    @State private var isLoadingLabels = false
+    @State private var labelLoadingError: String?
+    @State private var selectedLabelUID: String?
+    @State private var showUploadSheet = false
+    @State private var isUploading = false
+    @State private var uploadMessage: String?
+    @State private var uploadError: String?
+    @State private var clips: [RecordingClip] = []
+    @State private var isLoadingClips = false
+    @State private var clipsError: String?
+    @State private var exportMessage: String?
+    @State private var exportError: String?
+    @State private var audioPlayer: AVAudioPlayer?
+
+    init(loginService: AuthenticationService, showProfileSheet: Binding<Bool>) {
+        _showProfileSheet = showProfileSheet
+        repository = RecordingRepository(loginService: loginService)
+        listRepository = RecordingListRepository(loginService: loginService)
+        labelRepository = LabelRepository(loginService: loginService)
+    }
 
     var body: some View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
 
-                VStack(spacing: 32) {
-                    VStack(spacing: 12) {
-                        Image(systemName: "waveform.circle.fill")
-                            .font(.system(size: 72))
-                            .foregroundStyle(.cyan)
+                List {
+                    Section {
+                        VStack(spacing: 20) {
+                            VStack(spacing: 12) {
+                                Image(systemName: "waveform.circle.fill")
+                                    .font(.system(size: 72))
+                                    .foregroundStyle(.cyan)
 
-                        Text("Audio Recordings")
-                            .font(.title2.weight(.semibold))
-                            .foregroundStyle(.primary)
+                                Text("Audio Recordings")
+                                    .font(.title2.weight(.semibold))
+                                    .foregroundStyle(.primary)
 
-                        Text("Record and manage your audio files")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 40)
-                    }
+                                Text("Record, label, upload, and browse clips from the API")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
 
-                    NavigationLink {
-                        RecordingView { url in
-                            lastRecordingURL = url
-                        }
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "mic.fill")
-                                .font(.title3)
-                            Text("Start Recording")
-                                .font(.headline)
-                        }
-                        .foregroundStyle(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(Color.cyan)
-                        )
-                        .padding(.horizontal, 40)
-                    }
-
-                    if let url = lastRecordingURL {
-                        VStack(spacing: 8) {
-                            Text("Last Recording")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
-
-                            Text(url.lastPathComponent)
-                                .font(.caption)
-                                .foregroundStyle(.cyan)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
+                            NavigationLink {
+                                RecordingView { url in
+                                    handleCompletedRecording(url)
+                                }
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "mic.fill")
+                                        .font(.title3)
+                                    Text("Start Recording")
+                                        .font(.headline)
+                                }
+                                .foregroundStyle(.black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(Color.white.opacity(0.08))
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .fill(Color.cyan)
                                 )
+                            }
+
+                            if isUploading {
+                                ProgressView("Uploading recording...")
+                                    .tint(.cyan)
+                            }
+
+                            if let uploadMessage {
+                                Text(uploadMessage)
+                                    .font(.caption)
+                                    .foregroundStyle(.green)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color.green.opacity(0.12))
+                                    )
+                            }
+
+                            if let uploadError {
+                                Text(uploadError)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color.red.opacity(0.12))
+                                    )
+                            }
+
+                            if let exportMessage {
+                                Text(exportMessage)
+                                    .font(.caption)
+                                    .foregroundStyle(.green)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color.green.opacity(0.12))
+                                    )
+                            }
+
+                            if let exportError {
+                                Text(exportError)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color.red.opacity(0.12))
+                                    )
+                            }
+
+                            if let url = lastRecordingURL {
+                                VStack(spacing: 8) {
+                                    Text("Last Recording")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .textCase(.uppercase)
+
+                                    Text(url.lastPathComponent)
+                                        .font(.caption)
+                                        .foregroundStyle(.cyan)
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(Color.white.opacity(0.08))
+                                        )
+                                }
+                            }
+                        }
+                        .padding(.vertical, 16)
+                    }
+                    .listRowBackground(Color.white.opacity(0.06))
+
+                    Section("Clips") {
+                        if isLoadingClips {
+                            HStack {
+                                Spacer()
+                                ProgressView()
+                                    .tint(.cyan)
+                                Spacer()
+                            }
+                        } else if let clipsError {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text(clipsError)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                                Button("Retry", action: loadClips)
+                                    .foregroundStyle(.cyan)
+                            }
+                        } else if clips.isEmpty {
+                            Text("No clips returned by the API")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(clips) { clip in
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(clip.title)
+                                        .font(.body.weight(.medium))
+                                        .foregroundStyle(.primary)
+                                    if let subtitle = clip.subtitle {
+                                        Text(subtitle)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    if clip.samplesHex != nil, clip.sampleRate != nil {
+                                        HStack(spacing: 16) {
+                                            Button("Export WAV") {
+                                                exportWAV(for: clip)
+                                            }
+                                            .font(.caption.weight(.medium))
+                                            .foregroundStyle(.cyan)
+
+                                            Button("Play") {
+                                                playClip(clip)
+                                            }
+                                            .font(.caption.weight(.medium))
+                                            .foregroundStyle(.cyan)
+                                        }
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            }
                         }
                     }
+                    .listRowBackground(Color.white.opacity(0.06))
                 }
             }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
             .navigationTitle("Recordings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            .task {
+                loadClips()
+            }
+            .sheet(isPresented: $showUploadSheet) {
+                UploadLabelSheet(
+                    fileURL: pendingRecording?.fileURL,
+                    labels: availableLabels,
+                    isLoadingLabels: isLoadingLabels,
+                    labelLoadingError: labelLoadingError,
+                    selectedLabelUID: $selectedLabelUID,
+                    isUploading: isUploading,
+                    onCancel: {
+                        showUploadSheet = false
+                        pendingRecording = nil
+                    },
+                    onRetry: {
+                        loadLabelsForUpload()
+                    },
+                    onUpload: {
+                        uploadPendingRecording()
+                    }
+                )
+            }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        loadClips()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundStyle(.cyan)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showProfileSheet = true
@@ -746,6 +918,208 @@ struct RecordingsTab: View {
                 }
             }
         }
+    }
+
+    private func handleCompletedRecording(_ recording: CompletedRecording) {
+        lastRecordingURL = recording.fileURL
+        pendingRecording = recording
+        uploadMessage = nil
+        uploadError = nil
+        selectedLabelUID = nil
+        labelLoadingError = nil
+        availableLabels = []
+        showUploadSheet = true
+        loadLabelsForUpload()
+    }
+
+    private func loadLabelsForUpload() {
+        isLoadingLabels = true
+        labelLoadingError = nil
+
+        Task {
+            do {
+                let labels = try await labelRepository.list()
+                availableLabels = labels
+                selectedLabelUID = labels.first?.uid
+            } catch {
+                labelLoadingError = error.localizedDescription
+            }
+            isLoadingLabels = false
+        }
+    }
+
+    private func uploadPendingRecording() {
+        guard let pendingRecording, let selectedLabelUID else { return }
+
+        uploadMessage = nil
+        uploadError = nil
+        isUploading = true
+
+        print("🚀 uploadPendingRecording called for \(pendingRecording.fileURL.lastPathComponent)")
+
+        Task {
+            do {
+                try await repository.uploadRecording(recording: pendingRecording, labelUID: selectedLabelUID)
+                uploadMessage = "Uploaded \(pendingRecording.fileURL.lastPathComponent)"
+                showUploadSheet = false
+                self.pendingRecording = nil
+                loadClips()
+            } catch {
+                uploadError = error.localizedDescription
+            }
+            isUploading = false
+        }
+    }
+
+    private func loadClips() {
+        isLoadingClips = true
+        clipsError = nil
+
+        Task {
+            do {
+                clips = try await listRepository.list()
+            } catch {
+                clipsError = error.localizedDescription
+            }
+            isLoadingClips = false
+        }
+    }
+
+    private func exportWAV(for clip: RecordingClip) {
+        exportMessage = nil
+        exportError = nil
+
+        do {
+            let fileURL = try wavExportService.exportWAV(for: clip)
+            exportMessage = "Exported \(fileURL.lastPathComponent)"
+        } catch {
+            exportError = error.localizedDescription
+        }
+    }
+
+    private func playClip(_ clip: RecordingClip) {
+        exportMessage = nil
+        exportError = nil
+
+        do {
+            let fileURL = try wavExportService.exportWAV(for: clip)
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true)
+
+            let player = try AVAudioPlayer(contentsOf: fileURL)
+            player.prepareToPlay()
+            player.play()
+
+            audioPlayer = player
+            exportMessage = "Playing \(fileURL.lastPathComponent)"
+        } catch {
+            exportError = error.localizedDescription
+        }
+    }
+}
+
+struct UploadLabelSheet: View {
+    let fileURL: URL?
+    let labels: [RecorderLabel]
+    let isLoadingLabels: Bool
+    let labelLoadingError: String?
+    @Binding var selectedLabelUID: String?
+    let isUploading: Bool
+    let onCancel: () -> Void
+    let onRetry: () -> Void
+    let onUpload: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+
+                Group {
+                    if isLoadingLabels {
+                        ProgressView("Loading labels...")
+                            .tint(.cyan)
+                    } else {
+                        Form {
+                            Section("Recording") {
+                                Text(fileURL?.lastPathComponent ?? "Unknown file")
+                                    .foregroundStyle(.primary)
+                            }
+                            .listRowBackground(Color.white.opacity(0.06))
+
+                            if let labelLoadingError {
+                                Section {
+                                    Text(labelLoadingError)
+                                        .font(.caption)
+                                        .foregroundStyle(.red)
+
+                                    Button("Retry", action: onRetry)
+                                        .foregroundStyle(.cyan)
+                                }
+                                .listRowBackground(Color.red.opacity(0.12))
+                            } else if labels.isEmpty {
+                                Section {
+                                    Text("No labels available")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .listRowBackground(Color.white.opacity(0.06))
+                            } else {
+                                Section("Select Label") {
+                                    ForEach(labels) { label in
+                                        Button {
+                                            selectedLabelUID = label.uid
+                                        } label: {
+                                            HStack(spacing: 12) {
+                                                VStack(alignment: .leading, spacing: 4) {
+                                                    Text(label.name)
+                                                        .foregroundStyle(.primary)
+
+                                                    if !label.description.isEmpty {
+                                                        Text(label.description)
+                                                            .font(.caption)
+                                                            .foregroundStyle(.secondary)
+                                                    }
+                                                }
+
+                                                Spacer()
+
+                                                if selectedLabelUID == label.uid {
+                                                    Image(systemName: "checkmark.circle.fill")
+                                                        .foregroundStyle(.cyan)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                .listRowBackground(Color.white.opacity(0.06))
+                            }
+                        }
+                        .scrollContentBackground(.hidden)
+                    }
+                }
+            }
+            .navigationTitle("Upload Recording")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: onCancel)
+                        .foregroundStyle(.cyan)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isUploading {
+                        ProgressView()
+                            .tint(.cyan)
+                    } else {
+                        Button("Upload", action: onUpload)
+                            .foregroundStyle(.cyan)
+                            .disabled(isLoadingLabels || labels.isEmpty || selectedLabelUID == nil || labelLoadingError != nil)
+                    }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .presentationDetents([.medium, .large])
     }
 }
 

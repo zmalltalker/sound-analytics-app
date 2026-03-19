@@ -9,6 +9,11 @@ import Foundation
 
 @MainActor
 class APIService {
+    struct APIResponse {
+        let data: Data
+        let httpResponse: HTTPURLResponse
+    }
+
     let baseURL = "https://webrecorder.rest.dev.edgeaudioanalytics.no/rest/"
     private let loginService: AuthenticationService
 
@@ -16,7 +21,11 @@ class APIService {
         self.loginService = loginService
     }
 
-    func get(path: String) async throws -> Data {
+    func get(path: String, acceptHeader: String? = "application/json") async throws -> Data {
+        try await getResponse(path: path, acceptHeader: acceptHeader).data
+    }
+
+    func getResponse(path: String, acceptHeader: String? = "application/json") async throws -> APIResponse {
         print("🔍 API GET Request Debug:")
         print("   Path: \(path)")
         print("   Is logged in: \(loginService.isLoggedIn)")
@@ -53,12 +62,18 @@ class APIService {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let acceptHeader {
+            request.setValue(acceptHeader, forHTTPHeaderField: "Accept")
+        }
 
         print("   🌐 Sending GET request to: \(url)")
         print("   Headers:")
         print("     Authorization: Bearer \(token.prefix(20))...")
-        print("     Accept: application/json")
+        if let acceptHeader {
+            print("     Accept: \(acceptHeader)")
+        } else {
+            print("     Accept: <omitted>")
+        }
 
         // Make request
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -82,7 +97,7 @@ class APIService {
             throw APIError.httpError(statusCode: httpResponse.statusCode)
         }
 
-        return data
+        return APIResponse(data: data, httpResponse: httpResponse)
     }
 
     func whoami() async throws -> User {
@@ -130,12 +145,65 @@ class APIService {
         }
     }
 
+    func postMultipart(
+        path: String,
+        fields: [String: String],
+        fileFieldName: String,
+        fileURL: URL,
+        fileName: String,
+        mimeType: String
+    ) async throws -> APIResponse {
+        guard loginService.isLoggedIn else { throw APIError.notAuthenticated }
+        guard let token = await getAccessToken() else { throw APIError.noToken }
+        guard let url = URL(string: baseURL + path) else { throw APIError.invalidURL }
+
+        let boundary = "Boundary-\(UUID().uuidString.lowercased())"
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+
+        for (name, value) in fields {
+            body.append("--\(boundary)\r\n")
+            body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n")
+            body.append("\(value)\r\n")
+        }
+
+        let fileData = try Data(contentsOf: fileURL)
+        body.append("--\(boundary)\r\n")
+        body.append("Content-Disposition: form-data; name=\"\(fileFieldName)\"; filename=\"\(fileName)\"\r\n")
+        body.append("Content-Type: \(mimeType)\r\n\r\n")
+        body.append(fileData)
+        body.append("\r\n")
+        body.append("--\(boundary)--\r\n")
+
+        let (data, response) = try await URLSession.shared.upload(for: request, from: body)
+        guard let httpResponse = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            if let body = String(data: data, encoding: .utf8) {
+                print("❌ POST multipart \(path) \(httpResponse.statusCode): \(body)")
+            }
+            throw APIError.httpError(statusCode: httpResponse.statusCode)
+        }
+
+        return APIResponse(data: data, httpResponse: httpResponse)
+    }
+
     private func getAccessToken() async -> String? {
         await withCheckedContinuation { continuation in
             loginService.acquireTokenSilently { token in
                 continuation.resume(returning: token)
             }
         }
+    }
+}
+
+private extension Data {
+    mutating func append(_ string: String) {
+        guard let data = string.data(using: .utf8) else { return }
+        append(data)
     }
 }
 

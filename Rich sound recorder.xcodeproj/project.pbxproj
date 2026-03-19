@@ -11,7 +11,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		2967B89E2F584E090033B1BF /* Rich sound recorder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Rich sound recorder.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		2967B89E2F584E090033B1BF /* Resonyx mobile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Resonyx mobile.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -45,7 +45,7 @@
 		2967B89F2F584E090033B1BF /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				2967B89E2F584E090033B1BF /* Rich sound recorder.app */,
+				2967B89E2F584E090033B1BF /* Resonyx mobile.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -53,9 +53,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		2967B89D2F584E090033B1BF /* Rich sound recorder */ = {
+		2967B89D2F584E090033B1BF /* Resonyx mobile */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 2967B8A92F584E0A0033B1BF /* Build configuration list for PBXNativeTarget "Rich sound recorder" */;
+			buildConfigurationList = 2967B8A92F584E0A0033B1BF /* Build configuration list for PBXNativeTarget "Resonyx mobile" */;
 			buildPhases = (
 				2967B89A2F584E090033B1BF /* Sources */,
 				2967B89B2F584E090033B1BF /* Frameworks */,
@@ -69,12 +69,12 @@
 			fileSystemSynchronizedGroups = (
 				2967B8A02F584E090033B1BF /* Rich sound recorder */,
 			);
-			name = "Rich sound recorder";
+			name = "Resonyx mobile";
 			packageProductDependencies = (
 				9178360C2F69750F00DB4569 /* MSAL */,
 			);
 			productName = "Rich sound recorder";
-			productReference = 2967B89E2F584E090033B1BF /* Rich sound recorder.app */;
+			productReference = 2967B89E2F584E090033B1BF /* Resonyx mobile.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -109,7 +109,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				2967B89D2F584E090033B1BF /* Rich sound recorder */,
+				2967B89D2F584E090033B1BF /* Resonyx mobile */,
 			);
 		};
 /* End PBXProject section */
@@ -283,7 +283,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "Rich sound recorder/Rich sound recorder.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = FALV493978;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -320,7 +320,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "Rich sound recorder/Rich sound recorder.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = FALV493978;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -362,7 +362,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		2967B8A92F584E0A0033B1BF /* Build configuration list for PBXNativeTarget "Rich sound recorder" */ = {
+		2967B8A92F584E0A0033B1BF /* Build configuration list for PBXNativeTarget "Resonyx mobile" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				2967B8AA2F584E0A0033B1BF /* Debug */,

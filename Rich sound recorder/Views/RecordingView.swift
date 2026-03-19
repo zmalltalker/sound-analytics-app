@@ -6,14 +6,23 @@
 //
 
 import SwiftUI
+import AVFoundation
+
+struct CompletedRecording {
+    let fileURL: URL
+    let startTimestamp: Int
+    let endTimestamp: Int
+    let audioEndTimestamp: Double
+}
 
 struct RecordingView: View {
     @StateObject private var recorder = AudioRecorder()
     @State private var settings       = AudioSettings()
     @State private var showAdvanced   = false
+    @State private var recordingStartedAt: Date?
     @Environment(\.dismiss) private var dismiss
 
-    let onComplete: (URL) -> Void
+    let onComplete: (CompletedRecording) -> Void
 
     var body: some View {
         ZStack {
@@ -197,12 +206,23 @@ struct RecordingView: View {
             } else {
                 Button {
                     if recorder.isRecording {
+                        let recordingEndedAt = Date()
                         recorder.stop()
                         if let url = recorder.lastRecordingURL {
-                            onComplete(url)
+                            let startDate = recordingStartedAt ?? recordingEndedAt
+                            let duration = recordingDuration(for: url, fallbackStartDate: startDate, endDate: recordingEndedAt)
+                            onComplete(
+                                CompletedRecording(
+                                    fileURL: url,
+                                    startTimestamp: Int(startDate.timeIntervalSince1970),
+                                    endTimestamp: Int(recordingEndedAt.timeIntervalSince1970),
+                                    audioEndTimestamp: duration
+                                )
+                            )
                             dismiss()
                         }
                     } else {
+                        recordingStartedAt = Date()
                         recorder.start(settings: settings)
                     }
                 } label: {
@@ -298,6 +318,14 @@ struct RecordingView: View {
         LinearGradient(colors: [.green, .yellow, .orange, .red],
                        startPoint: .leading, endPoint: .trailing)
     }
+
+    private func recordingDuration(for fileURL: URL, fallbackStartDate: Date, endDate: Date) -> Double {
+        let assetDuration = AVURLAsset(url: fileURL).duration.seconds
+        if assetDuration.isFinite, assetDuration > 0 {
+            return assetDuration
+        }
+        return max(0, endDate.timeIntervalSince(fallbackStartDate))
+    }
 }
 
 // MARK: - MicModeRow
@@ -378,8 +406,8 @@ struct SpectrumView: View {
 
 #Preview {
     NavigationStack {
-        RecordingView { url in
-            print("Recording completed: \(url)")
+        RecordingView { recording in
+            print("Recording completed: \(recording.fileURL)")
         }
     }
 }
