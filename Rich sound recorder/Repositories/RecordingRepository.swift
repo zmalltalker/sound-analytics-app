@@ -35,12 +35,6 @@ class RecordingRepository {
             throw APIError.invalidResponse
         }
 
-        print("🎯 Upload recording:")
-        print("   File: \(recording.fileURL.lastPathComponent)")
-        print("   Label UID: \(labelUID)")
-        print("   Start timestamp: \(recording.startTimestamp)")
-        print("   End timestamp: \(recording.endTimestamp)")
-        print("   Audio end timestamp: \(recording.audioEndTimestamp)")
 
         let response = try await apiService.postMultipart(
             path: "data_upload/single",
@@ -51,13 +45,6 @@ class RecordingRepository {
             mimeType: mimeType(for: recording.fileURL)
         )
 
-        print("✅ Upload response:")
-        print("   Status: \(response.httpResponse.statusCode)")
-        if let body = String(data: response.data, encoding: .utf8), !body.isEmpty {
-            print("   Body: \(body)")
-        } else {
-            print("   Body: <empty or non-UTF8>")
-        }
     }
 
     private func mimeType(for fileURL: URL) -> String {
