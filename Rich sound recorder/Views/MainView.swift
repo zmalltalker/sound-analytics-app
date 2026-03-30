@@ -5,7 +5,6 @@
 //  Created by Marius Mathiesen on 17/03/2026.
 //
 
-import AVFoundation
 import SwiftUI
 
 struct MainView: View {
@@ -800,9 +799,7 @@ struct RecordingsTab: View {
     @Binding var showProfileSheet: Bool
 
     private let repository: RecordingRepository
-    private let listRepository: RecordingListRepository
     private let labelRepository: LabelRepository
-    private let wavExportService = RecordingWAVExportService()
     @State private var lastRecordingURL: URL?
     @State private var pendingRecording: CompletedRecording?
     @State private var availableLabels: [RecorderLabel] = []
@@ -813,18 +810,10 @@ struct RecordingsTab: View {
     @State private var isUploading = false
     @State private var uploadMessage: String?
     @State private var uploadError: String?
-    @State private var clips: [RecordingClipGroup] = []
-    @State private var isLoadingClips = false
-    @State private var clipsError: String?
-    @State private var exportMessage: String?
-    @State private var exportError: String?
-    @State private var audioPlayer: AVAudioPlayer?
-    @State private var selectedClipGroup: RecordingClipGroup?
 
     init(loginService: AuthenticationService, showProfileSheet: Binding<Bool>) {
         _showProfileSheet = showProfileSheet
         repository = RecordingRepository(loginService: loginService)
-        listRepository = RecordingListRepository(loginService: loginService)
         labelRepository = LabelRepository(loginService: loginService)
     }
 
@@ -845,7 +834,7 @@ struct RecordingsTab: View {
                                     .font(.title2.weight(.semibold))
                                     .foregroundStyle(.primary)
 
-                                Text("Record, label, upload, and browse clips from the API")
+                                Text("Record, label, and upload clips to the API")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                                     .multilineTextAlignment(.center)
@@ -901,31 +890,6 @@ struct RecordingsTab: View {
                                     )
                             }
 
-                            if let exportMessage {
-                                Text(exportMessage)
-                                    .font(.caption)
-                                    .foregroundStyle(.green)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .fill(Color.green.opacity(0.12))
-                                    )
-                            }
-
-                            if let exportError {
-                                Text(exportError)
-                                    .font(.caption)
-                                    .foregroundStyle(.red)
-                                    .multilineTextAlignment(.center)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .fill(Color.red.opacity(0.12))
-                                    )
-                            }
-
                             if let url = lastRecordingURL {
                                 VStack(spacing: 8) {
                                     Text("Last Recording")
@@ -949,34 +913,6 @@ struct RecordingsTab: View {
                     }
                     .listRowBackground(Color.white.opacity(0.06))
 
-                    Section("Clips") {
-                        if isLoadingClips {
-                            HStack {
-                                Spacer()
-                                ProgressView()
-                                    .tint(.cyan)
-                                Spacer()
-                            }
-                        } else if let clipsError {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text(clipsError)
-                                    .font(.caption)
-                                    .foregroundStyle(.red)
-                                Button("Retry", action: loadClips)
-                                    .foregroundStyle(.cyan)
-                            }
-                        } else if clips.isEmpty {
-                            Text("No clips returned by the API")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            ForEach(clips) { clipGroup in
-                                RecordingClipGroupRow(clipGroup: clipGroup) {
-                                    selectedClipGroup = clipGroup
-                                }
-                            }
-                        }
-                    }
-                    .listRowBackground(Color.white.opacity(0.06))
                 }
             }
             .listStyle(.insetGrouped)
@@ -984,9 +920,6 @@ struct RecordingsTab: View {
             .navigationTitle("Recordings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            .task {
-                loadClips()
-            }
             .sheet(isPresented: $showUploadSheet) {
                 UploadLabelSheet(
                     fileURL: pendingRecording?.fileURL,
@@ -1007,26 +940,7 @@ struct RecordingsTab: View {
                     }
                 )
             }
-            .sheet(item: $selectedClipGroup) { clipGroup in
-                RecordingVersionsSheet(
-                    clipGroup: clipGroup,
-                    onExport: { clip in
-                        exportWAV(for: clip)
-                    },
-                    onPlay: { clip in
-                        playClip(clip)
-                    }
-                )
-            }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        loadClips()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .foregroundStyle(.cyan)
-                    }
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showProfileSheet = true
@@ -1083,58 +997,10 @@ struct RecordingsTab: View {
                 uploadMessage = "Uploaded \(pendingRecording.fileURL.lastPathComponent)"
                 showUploadSheet = false
                 self.pendingRecording = nil
-                loadClips()
             } catch {
                 uploadError = error.localizedDescription
             }
             isUploading = false
-        }
-    }
-
-    private func loadClips() {
-        isLoadingClips = true
-        clipsError = nil
-
-        Task {
-            do {
-                clips = try await listRepository.list()
-            } catch {
-                clipsError = error.localizedDescription
-            }
-            isLoadingClips = false
-        }
-    }
-
-    private func exportWAV(for clip: RecordingClip) {
-        exportMessage = nil
-        exportError = nil
-
-        do {
-            let fileURL = try wavExportService.exportWAV(for: clip)
-            exportMessage = "Exported \(fileURL.lastPathComponent)"
-        } catch {
-            exportError = error.localizedDescription
-        }
-    }
-
-    private func playClip(_ clip: RecordingClip) {
-        exportMessage = nil
-        exportError = nil
-
-        do {
-            let fileURL = try wavExportService.exportWAV(for: clip)
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [])
-            try session.setActive(true)
-
-            let player = try AVAudioPlayer(contentsOf: fileURL)
-            player.prepareToPlay()
-            player.play()
-
-            audioPlayer = player
-            exportMessage = "Playing \(fileURL.lastPathComponent)"
-        } catch {
-            exportError = error.localizedDescription
         }
     }
 }
