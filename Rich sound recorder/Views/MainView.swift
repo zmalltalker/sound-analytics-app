@@ -44,6 +44,7 @@ struct ProjectsTab: View {
 
     @State private var repository: ProjectRepository?
     @State private var labelRepository: LabelRepository?
+    @State private var clipRepository: ClipRepository?
     @State private var projects: [Project] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -86,7 +87,8 @@ struct ProjectsTab: View {
                                 ProjectListRow(
                                     project: project,
                                     projectRepository: repository,
-                                    labelRepository: labelRepository
+                                    labelRepository: labelRepository,
+                                    clipRepository: clipRepository
                                 ) { updatedProject in
                                     replaceProject(updatedProject)
                                 }
@@ -137,6 +139,7 @@ struct ProjectsTab: View {
             .task {
                 repository = ProjectRepository(loginService: loginService)
                 labelRepository = LabelRepository(loginService: loginService)
+                clipRepository = ClipRepository(loginService: loginService)
                 fetchProjects()
             }
         }
@@ -181,15 +184,17 @@ struct ProjectListRow: View {
     let project: Project
     let projectRepository: ProjectRepository?
     let labelRepository: LabelRepository?
+    let clipRepository: ClipRepository?
     let onProjectUpdated: (Project) -> Void
 
     var body: some View {
-        if let projectRepository, let labelRepository {
+        if let projectRepository, let labelRepository, let clipRepository {
             NavigationLink {
                 ProjectDetailView(
                     project: project,
                     projectRepository: projectRepository,
                     labelRepository: labelRepository,
+                    clipRepository: clipRepository,
                     onProjectUpdated: onProjectUpdated
                 )
             } label: {
@@ -226,6 +231,7 @@ struct ProjectRow: View {
 struct ProjectDetailView: View {
     let projectRepository: ProjectRepository
     let labelRepository: LabelRepository
+    let clipRepository: ClipRepository
     let onProjectUpdated: (Project) -> Void
 
     @State private var project: Project
@@ -234,15 +240,19 @@ struct ProjectDetailView: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var successMessage: String?
+    @State private var snippetCounts: [String: Int] = [:]
+    @State private var snippetCountErrors: [String: String] = [:]
 
     init(
         project: Project,
         projectRepository: ProjectRepository,
         labelRepository: LabelRepository,
+        clipRepository: ClipRepository,
         onProjectUpdated: @escaping (Project) -> Void
     ) {
         self.projectRepository = projectRepository
         self.labelRepository = labelRepository
+        self.clipRepository = clipRepository
         self.onProjectUpdated = onProjectUpdated
         _project = State(initialValue: project)
     }
@@ -274,7 +284,7 @@ struct ProjectDetailView: View {
                 .listRowBackground(Color.red.opacity(0.12))
             }
 
-            Section("Labels") {
+            Section("Assigned Labels (\(project.labelUIDs.count))") {
                 if isLoadingLabels {
                     HStack {
                         Spacer()
@@ -282,11 +292,74 @@ struct ProjectDetailView: View {
                             .tint(.cyan)
                         Spacer()
                     }
-                } else if availableLabels.isEmpty {
-                    Text("No labels available")
+                } else if project.labelUIDs.isEmpty {
+                    Text("No labels assigned yet")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(availableLabels) { label in
+                    ForEach(assignedLabels) { label in
+                        NavigationLink {
+                            LabelDetailView(
+                                labelUID: label.uid,
+                                labelName: label.name,
+                                clipRepository: clipRepository
+                            )
+                        } label: {
+                            HStack(alignment: .top, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(label.name)
+                                        .foregroundStyle(.primary)
+
+                                    if !label.description.isEmpty {
+                                        Text(label.description)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+
+                                Spacer()
+
+                                snippetCountIndicator(for: label.uid)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+
+                    ForEach(missingAssignedLabelUIDs, id: \.self) { uid in
+                        NavigationLink {
+                            LabelDetailView(
+                                labelUID: uid,
+                                labelName: "Label",
+                                clipRepository: clipRepository
+                            )
+                        } label: {
+                            HStack(alignment: .center) {
+                                Text("Label ID: \(uid)")
+                                    .foregroundStyle(.secondary)
+
+                                Spacer()
+
+                                snippetCountIndicator(for: uid)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+            }
+            .listRowBackground(Color.white.opacity(0.06))
+
+            Section("Available Labels") {
+                if isLoadingLabels {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .tint(.cyan)
+                        Spacer()
+                    }
+                } else if unassignedLabels.isEmpty {
+                    Text("All labels assigned")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(unassignedLabels) { label in
                         LabelAssignmentRow(
                             label: label,
                             isAssigned: project.labelUIDs.contains(label.uid),
@@ -304,7 +377,9 @@ struct ProjectDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .task {
-            await loadLabels()
+            async let labelsTask: Void = loadLabels()
+            async let snippetsTask: Void = loadSnippetCounts()
+            _ = await (labelsTask, snippetsTask)
         }
     }
 
@@ -319,6 +394,61 @@ struct ProjectDetailView: View {
         }
 
         isLoadingLabels = false
+    }
+
+    private func loadSnippetCounts() async {
+        snippetCountErrors = [:]
+
+        guard !project.labelUIDs.isEmpty else { return }
+
+        for uid in project.labelUIDs {
+            await loadSnippetCount(for: uid)
+        }
+    }
+
+    private func loadSnippetCount(for labelUID: String) async {
+        do {
+            let snippets = try await clipRepository.listSnippets(labelUID: labelUID)
+            snippetCounts[labelUID] = snippets.count
+            snippetCountErrors[labelUID] = nil
+        } catch {
+            snippetCountErrors[labelUID] = error.localizedDescription
+        }
+    }
+
+    private var assignedLabels: [RecorderLabel] {
+        project.labelUIDs.compactMap { uid in
+            availableLabels.first(where: { $0.uid == uid })
+        }
+    }
+
+    private var missingAssignedLabelUIDs: [String] {
+        project.labelUIDs.filter { uid in
+            !availableLabels.contains(where: { $0.uid == uid })
+        }
+    }
+
+    private var unassignedLabels: [RecorderLabel] {
+        availableLabels.filter { label in
+            !project.labelUIDs.contains(label.uid)
+        }
+    }
+
+    @ViewBuilder
+    private func snippetCountIndicator(for labelUID: String) -> some View {
+        if let count = snippetCounts[labelUID] {
+            Text("\(count) sample\(count == 1 ? "" : "s")")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.cyan)
+        } else if snippetCountErrors[labelUID] != nil {
+            Text("Failed")
+                .font(.caption2)
+                .foregroundStyle(.red)
+        } else {
+            ProgressView()
+                .scaleEffect(0.7)
+                .tint(.cyan)
+        }
     }
 
     private func assign(_ label: RecorderLabel) {
@@ -345,6 +475,7 @@ struct ProjectDetailView: View {
                 project = updatedProject
                 onProjectUpdated(updatedProject)
                 successMessage = "\"\(label.name)\" assigned"
+                await loadSnippetCount(for: label.uid)
             } catch {
                 errorMessage = error.localizedDescription
             }
