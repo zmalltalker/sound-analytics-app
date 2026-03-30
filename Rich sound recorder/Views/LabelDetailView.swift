@@ -8,6 +8,7 @@ struct LabelDetailView: View {
     @State private var snippets: [LabelSnippet] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
+    @State private var downloadStates: [LabelSnippet.ID: SnippetDownloadState] = [:]
 
     var body: some View {
         List {
@@ -58,6 +59,18 @@ struct LabelDetailView: View {
                             Text("Duration: \(formattedDuration(snippet.duration))")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+
+                            HStack {
+                                Spacer()
+                                snippetActionView(for: snippet)
+                            }
+                            .padding(.top, 6)
+
+                            if case .failed(let message) = downloadStates[snippet.id] {
+                                Text(message)
+                                    .font(.caption2)
+                                    .foregroundStyle(.red)
+                            }
                         }
                         .padding(.vertical, 6)
                     }
@@ -106,4 +119,72 @@ struct LabelDetailView: View {
         formatter.zeroFormattingBehavior = .pad
         return formatter.string(from: duration) ?? String(format: "%.1fs", duration)
     }
+
+    @ViewBuilder
+    private func snippetActionView(for snippet: LabelSnippet) -> some View {
+        let state = downloadStates[snippet.id] ?? .idle
+
+        switch state {
+        case .idle:
+            Button {
+                downloadSnippet(snippet)
+            } label: {
+                Label("Download", systemImage: "arrow.down.circle")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.cyan)
+
+        case .downloading:
+            ProgressView()
+                .tint(.cyan)
+
+        case .downloaded(let audioFile):
+            NavigationLink {
+                SnippetPlayerView(
+                    labelName: labelName,
+                    audioFile: audioFile
+                )
+            } label: {
+                Label("Open", systemImage: "play.circle")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.green)
+
+        case .failed:
+            Button {
+                downloadSnippet(snippet)
+            } label: {
+                Label("Retry", systemImage: "arrow.clockwise")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.bordered)
+            .tint(.red)
+        }
+    }
+
+    private func downloadSnippet(_ snippet: LabelSnippet) {
+        downloadStates[snippet.id] = .downloading
+
+        Task {
+            do {
+                let result = try await clipRepository.downloadSnippet(start: snippet.start, end: snippet.end)
+                await MainActor.run {
+                    downloadStates[snippet.id] = .downloaded(result)
+                }
+            } catch {
+                await MainActor.run {
+                    downloadStates[snippet.id] = .failed(error.localizedDescription)
+                }
+            }
+        }
+    }
+}
+
+private enum SnippetDownloadState {
+    case idle
+    case downloading
+    case downloaded(SnippetAudioFile)
+    case failed(String)
 }
