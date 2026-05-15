@@ -5,6 +5,7 @@
 //  Created by Marius Mathiesen on 17/03/2026.
 //
 
+import AVFoundation
 import SwiftUI
 
 struct MainView: View {
@@ -1030,6 +1031,10 @@ struct UploadLabelSheet: View {
                             Section("Recording") {
                                 Text(fileURL?.lastPathComponent ?? "Unknown file")
                                     .foregroundStyle(.primary)
+
+                                if let fileURL {
+                                    RecordingPlaybackControl(fileURL: fileURL)
+                                }
                             }
                             .listRowBackground(Color.white.opacity(0.06))
 
@@ -1106,6 +1111,123 @@ struct UploadLabelSheet: View {
         }
         .preferredColorScheme(.dark)
         .presentationDetents([.medium, .large])
+    }
+}
+
+struct RecordingPlaybackControl: View {
+    let fileURL: URL
+
+    @State private var audioPlayer: AVAudioPlayer?
+    @State private var isPlaying = false
+    @State private var currentTime: TimeInterval = 0
+    @State private var duration: TimeInterval = 0
+    @State private var loadError: String?
+    @State private var playbackTimer: Timer?
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Slider(
+                value: Binding(
+                    get: { currentTime },
+                    set: { newValue in
+                        currentTime = newValue
+                        audioPlayer?.currentTime = newValue
+                    }
+                ),
+                in: 0...max(duration, 0.1)
+            )
+            .disabled(audioPlayer == nil)
+
+            HStack {
+                Text(timeLabel(for: currentTime))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Text(timeLabel(for: duration))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Button(action: togglePlayback) {
+                Label(isPlaying ? "Pause Sample" : "Play Sample", systemImage: isPlaying ? "pause.fill" : "play.fill")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.cyan)
+            .disabled(audioPlayer == nil)
+
+            if let loadError {
+                Text(loadError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(.vertical, 4)
+        .onAppear(perform: preparePlayer)
+        .onDisappear(perform: stopPlayback)
+    }
+
+    private func preparePlayer() {
+        guard audioPlayer == nil else { return }
+
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+            audioPlayer = try AVAudioPlayer(contentsOf: fileURL)
+            audioPlayer?.prepareToPlay()
+            duration = audioPlayer?.duration ?? 0
+            currentTime = 0
+            loadError = nil
+        } catch {
+            loadError = error.localizedDescription
+        }
+    }
+
+    private func togglePlayback() {
+        guard let player = audioPlayer else { return }
+
+        if player.isPlaying {
+            player.pause()
+            isPlaying = false
+        } else {
+            player.play()
+            isPlaying = true
+            startTimer()
+        }
+    }
+
+    private func startTimer() {
+        playbackTimer?.invalidate()
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in
+            guard let player = audioPlayer else { return }
+
+            currentTime = player.currentTime
+            if !player.isPlaying, isPlaying {
+                isPlaying = false
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        playbackTimer = timer
+    }
+
+    private func stopPlayback() {
+        audioPlayer?.stop()
+        audioPlayer = nil
+        isPlaying = false
+        currentTime = 0
+        playbackTimer?.invalidate()
+        playbackTimer = nil
+    }
+
+    private func timeLabel(for seconds: TimeInterval) -> String {
+        guard seconds.isFinite else { return "--:--" }
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = seconds >= 3600 ? [.hour, .minute, .second] : [.minute, .second]
+        formatter.zeroFormattingBehavior = [.pad]
+        return formatter.string(from: seconds) ?? "--:--"
     }
 }
 
