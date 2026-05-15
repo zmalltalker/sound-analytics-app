@@ -106,6 +106,10 @@ class APIService {
     }
 
     func postEmpty(path: String) async throws {
+        _ = try await postEmptyResponse(path: path)
+    }
+
+    func postEmptyResponse(path: String) async throws -> APIResponse {
         guard loginService.isLoggedIn else { throw APIError.notAuthenticated }
         guard let token = await getAccessToken() else { throw APIError.noToken }
         guard let url = URL(string: baseURL + path) else { throw APIError.invalidURL }
@@ -122,9 +126,15 @@ class APIService {
             }
             throw APIError.httpError(statusCode: httpResponse.statusCode)
         }
+
+        return APIResponse(data: data, httpResponse: httpResponse)
     }
 
     func post<Body: Encodable>(path: String, body: Body) async throws {
+        _ = try await postResponse(path: path, body: body)
+    }
+
+    func postResponse<Body: Encodable>(path: String, body: Body) async throws -> APIResponse {
         guard loginService.isLoggedIn else { throw APIError.notAuthenticated }
         guard let token = await getAccessToken() else { throw APIError.noToken }
         guard let url = URL(string: baseURL + path) else { throw APIError.invalidURL }
@@ -143,6 +153,8 @@ class APIService {
             }
             throw APIError.httpError(statusCode: httpResponse.statusCode)
         }
+
+        return APIResponse(data: data, httpResponse: httpResponse)
     }
 
     func postMultipart(

@@ -228,12 +228,20 @@ struct ProjectRow: View {
     }
 }
 
+private enum ProjectDetailSection: String, CaseIterable, Identifiable {
+    case labels = "Labels"
+    case models = "Models"
+
+    var id: String { rawValue }
+}
+
 struct ProjectDetailView: View {
     let projectRepository: ProjectRepository
     let labelRepository: LabelRepository
     let clipRepository: ClipRepository
     let onProjectUpdated: (Project) -> Void
 
+    @State private var selectedSection: ProjectDetailSection = .labels
     @State private var project: Project
     @State private var availableLabels: [RecorderLabel] = []
     @State private var isLoadingLabels = true
@@ -242,6 +250,14 @@ struct ProjectDetailView: View {
     @State private var successMessage: String?
     @State private var snippetCounts: [String: Int] = [:]
     @State private var snippetCountErrors: [String: String] = [:]
+    @State private var modelVersions: [String] = []
+    @State private var isLoadingModelVersions = false
+    @State private var isTraining = false
+    @State private var trainingRequestUID: String?
+    @State private var trainingStatus: TrainingStatus?
+    @State private var trainingStatusHistory: [TrainingStatusReport] = []
+    @State private var trainingHistoryError: String?
+    @State private var trainingPollTask: Task<Void, Never>?
 
     init(
         project: Project,
@@ -266,6 +282,16 @@ struct ProjectDetailView: View {
             }
             .listRowBackground(Color.white.opacity(0.06))
 
+            Section {
+                Picker("Project Detail Section", selection: $selectedSection) {
+                    ForEach(ProjectDetailSection.allCases) { section in
+                        Text(section.rawValue).tag(section)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+            .listRowBackground(Color.white.opacity(0.06))
+
             if let successMessage {
                 Section {
                     Text(successMessage)
@@ -284,92 +310,11 @@ struct ProjectDetailView: View {
                 .listRowBackground(Color.red.opacity(0.12))
             }
 
-            Section("Assigned Labels (\(project.labelUIDs.count))") {
-                if isLoadingLabels {
-                    HStack {
-                        Spacer()
-                        ProgressView()
-                            .tint(.cyan)
-                        Spacer()
-                    }
-                } else if project.labelUIDs.isEmpty {
-                    Text("No labels assigned yet")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(assignedLabels) { label in
-                        NavigationLink {
-                            LabelDetailView(
-                                labelUID: label.uid,
-                                labelName: label.name,
-                                clipRepository: clipRepository
-                            )
-                        } label: {
-                            HStack(alignment: .top, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(label.name)
-                                        .foregroundStyle(.primary)
-
-                                    if !label.description.isEmpty {
-                                        Text(label.description)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-
-                                Spacer()
-
-                                snippetCountIndicator(for: label.uid)
-                            }
-                            .padding(.vertical, 4)
-                        }
-                    }
-
-                    ForEach(missingAssignedLabelUIDs, id: \.self) { uid in
-                        NavigationLink {
-                            LabelDetailView(
-                                labelUID: uid,
-                                labelName: "Label",
-                                clipRepository: clipRepository
-                            )
-                        } label: {
-                            HStack(alignment: .center) {
-                                Text("Label ID: \(uid)")
-                                    .foregroundStyle(.secondary)
-
-                                Spacer()
-
-                                snippetCountIndicator(for: uid)
-                            }
-                            .padding(.vertical, 4)
-                        }
-                    }
-                }
+            if selectedSection == .labels {
+                labelSections
+            } else {
+                modelSections
             }
-            .listRowBackground(Color.white.opacity(0.06))
-
-            Section("Available Labels") {
-                if isLoadingLabels {
-                    HStack {
-                        Spacer()
-                        ProgressView()
-                            .tint(.cyan)
-                        Spacer()
-                    }
-                } else if unassignedLabels.isEmpty {
-                    Text("All labels assigned")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(unassignedLabels) { label in
-                        LabelAssignmentRow(
-                            label: label,
-                            isAssigned: project.labelUIDs.contains(label.uid),
-                            isSaving: isSaving,
-                            onAssign: { assign(label) }
-                        )
-                    }
-                }
-            }
-            .listRowBackground(Color.white.opacity(0.06))
         }
         .scrollContentBackground(.hidden)
         .background(Color.black.ignoresSafeArea())
@@ -379,7 +324,193 @@ struct ProjectDetailView: View {
         .task {
             async let labelsTask: Void = loadLabels()
             async let snippetsTask: Void = loadSnippetCounts()
-            _ = await (labelsTask, snippetsTask)
+            async let modelsTask: Void = loadModelVersions()
+            _ = await (labelsTask, snippetsTask, modelsTask)
+        }
+        .onDisappear {
+            trainingPollTask?.cancel()
+        }
+    }
+
+    @ViewBuilder
+    private var labelSections: some View {
+        Section("Assigned Labels (\(project.labelUIDs.count))") {
+            if isLoadingLabels {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                        .tint(.cyan)
+                    Spacer()
+                }
+            } else if project.labelUIDs.isEmpty {
+                Text("No labels assigned yet")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(assignedLabels) { label in
+                    NavigationLink {
+                        LabelDetailView(
+                            labelUID: label.uid,
+                            labelName: label.name,
+                            clipRepository: clipRepository
+                        )
+                    } label: {
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(label.name)
+                                    .foregroundStyle(.primary)
+
+                                if !label.description.isEmpty {
+                                    Text(label.description)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
+                            Spacer()
+
+                            snippetCountIndicator(for: label.uid)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+
+                ForEach(missingAssignedLabelUIDs, id: \.self) { uid in
+                    NavigationLink {
+                        LabelDetailView(
+                            labelUID: uid,
+                            labelName: "Label",
+                            clipRepository: clipRepository
+                        )
+                    } label: {
+                        HStack(alignment: .center) {
+                            Text("Label ID: \(uid)")
+                                .foregroundStyle(.secondary)
+
+                            Spacer()
+
+                            snippetCountIndicator(for: uid)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+        }
+        .listRowBackground(Color.white.opacity(0.06))
+
+        Section("Available Labels") {
+            if isLoadingLabels {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                        .tint(.cyan)
+                    Spacer()
+                }
+            } else if unassignedLabels.isEmpty {
+                Text("All labels assigned")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(unassignedLabels) { label in
+                    LabelAssignmentRow(
+                        label: label,
+                        isAssigned: project.labelUIDs.contains(label.uid),
+                        isSaving: isSaving,
+                        onAssign: { assign(label) }
+                    )
+                }
+            }
+        }
+        .listRowBackground(Color.white.opacity(0.06))
+    }
+
+    @ViewBuilder
+    private var modelSections: some View {
+        Section("Model Versions") {
+            if isLoadingModelVersions {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                        .tint(.cyan)
+                    Spacer()
+                }
+            } else if modelVersions.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("No model versions available")
+                        .foregroundStyle(.secondary)
+
+                    Button {
+                        startTraining()
+                    } label: {
+                        if isTraining {
+                            Label("Training", systemImage: "hourglass")
+                        } else {
+                            Label("Start Training", systemImage: "play.circle.fill")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.cyan)
+                    .disabled(isTraining)
+                }
+                .padding(.vertical, 4)
+            } else {
+                ForEach(modelVersions, id: \.self) { version in
+                    Label(version, systemImage: "cube.box")
+                }
+            }
+        }
+        .listRowBackground(Color.white.opacity(0.06))
+
+        if let trainingRequestUID {
+            Section("Training") {
+                LabeledContent("Request", value: trainingRequestUID)
+
+                if let trainingStatus {
+                    LabeledContent("Status", value: trainingStatus.displayName)
+                } else {
+                    LabeledContent("Status", value: "Waiting")
+                }
+
+                if isTraining {
+                    HStack {
+                        ProgressView()
+                            .tint(.cyan)
+                        Text("Checking training status")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if let trainingHistoryError {
+                    Text(trainingHistoryError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                } else if trainingStatusHistory.isEmpty {
+                    Text("No status reports yet")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(trainingStatusHistory) { report in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(report.status.displayName)
+                                    .font(.subheadline.weight(.medium))
+                                Spacer()
+                                if let createdAt = report.createdAt {
+                                    Text(createdAt, style: .time)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
+                            if let message = report.message, !message.isEmpty {
+                                Text(message)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+            .listRowBackground(Color.white.opacity(0.06))
         }
     }
 
@@ -394,6 +525,18 @@ struct ProjectDetailView: View {
         }
 
         isLoadingLabels = false
+    }
+
+    private func loadModelVersions() async {
+        isLoadingModelVersions = true
+
+        do {
+            modelVersions = try await projectRepository.availableModelVersions(projectUID: project.uid)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        isLoadingModelVersions = false
     }
 
     private func loadSnippetCounts() async {
@@ -481,6 +624,66 @@ struct ProjectDetailView: View {
             }
 
             isSaving = false
+        }
+    }
+
+    private func startTraining() {
+        guard !isTraining else { return }
+
+        trainingPollTask?.cancel()
+        isTraining = true
+        trainingRequestUID = nil
+        trainingStatus = nil
+        trainingStatusHistory = []
+        trainingHistoryError = nil
+        errorMessage = nil
+        successMessage = nil
+
+        trainingPollTask = Task {
+            do {
+                let request = try await projectRepository.train(projectUID: project.uid)
+                trainingRequestUID = request.requestUID
+                trainingStatus = .inProgress
+                successMessage = "Training started"
+                await loadTrainingStatusHistory(requestUID: request.requestUID)
+                try await pollTrainingStatus(requestUID: request.requestUID)
+            } catch is CancellationError {
+                isTraining = false
+            } catch {
+                errorMessage = error.localizedDescription
+                isTraining = false
+            }
+        }
+    }
+
+    private func pollTrainingStatus(requestUID: String) async throws {
+        while !Task.isCancelled {
+            let status = try await projectRepository.trainingStatus(requestUID: requestUID)
+            trainingStatus = status
+            await loadTrainingStatusHistory(requestUID: requestUID)
+
+            switch status {
+            case .success:
+                successMessage = "Training completed"
+                isTraining = false
+                await loadModelVersions()
+                return
+            case .failed:
+                errorMessage = "Training failed"
+                isTraining = false
+                return
+            case .inProgress, .missing, .unknown:
+                try await Task.sleep(nanoseconds: 5_000_000_000)
+            }
+        }
+    }
+
+    private func loadTrainingStatusHistory(requestUID: String) async {
+        do {
+            trainingStatusHistory = try await projectRepository.trainingStatusHistory(requestUID: requestUID)
+            trainingHistoryError = nil
+        } catch {
+            trainingHistoryError = "Could not load status history: \(error.localizedDescription)"
         }
     }
 
