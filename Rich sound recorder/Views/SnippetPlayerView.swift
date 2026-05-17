@@ -14,6 +14,10 @@ struct SnippetPlayerView: View {
 
     @State private var playbackTimer: Timer?
 
+    @State private var analysisResult: AudioAnalysisResult?
+    @State private var isAnalyzing = false
+    @State private var selectedEvent: AudioEventRegion?
+
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -38,6 +42,55 @@ struct SnippetPlayerView: View {
                         .padding(.top, 4)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+                // MARK: - Waveform timeline
+                if isAnalyzing {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .tint(.cyan)
+                        Text("Analyzing waveform…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if let analysis = analysisResult {
+                    VStack(alignment: .leading, spacing: 6) {
+                        AudioTimelineView(
+                            result: analysis,
+                            currentTime: currentTime,
+                            onEventTapped: { event in
+                                selectedEvent = event
+                                audioPlayer?.currentTime = event.peakTime
+                                if !(audioPlayer?.isPlaying ?? false) {
+                                    audioPlayer?.play()
+                                    isPlaying = true
+                                    startTimer()
+                                }
+                            }
+                        )
+                        .background(Color.white.opacity(0.05))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                        HStack {
+                            Image(systemName: "waveform")
+                                .foregroundStyle(.cyan)
+                                .font(.caption)
+                            Text(analysis.events.isEmpty
+                                 ? "No events detected"
+                                 : "\(analysis.events.count) event\(analysis.events.count == 1 ? "" : "s") detected")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if let evt = selectedEvent {
+                                Text(String(format: "%.2fs – %.2fs", evt.startTime, evt.endTime))
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.cyan)
+                            }
+                        }
+                    }
+                }
 
                 VStack(spacing: 12) {
                     Slider(
@@ -103,6 +156,15 @@ struct SnippetPlayerView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .onAppear(perform: preparePlayer)
+        .task {
+            isAnalyzing = true
+            defer { isAnalyzing = false }
+            do {
+                analysisResult = try await AudioAnalyzer().analyze(url: audioFile.fileURL)
+            } catch {
+                print("⚠️ Audio analysis failed: \(error.localizedDescription)")
+            }
+        }
         .onDisappear {
             audioPlayer?.stop()
             isPlaying = false
