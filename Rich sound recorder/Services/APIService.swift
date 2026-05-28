@@ -130,6 +130,27 @@ class APIService {
         return APIResponse(data: data, httpResponse: httpResponse)
     }
 
+    func postResponse(path: String) async throws -> Data {
+        guard loginService.isLoggedIn else { throw APIError.notAuthenticated }
+        guard let token = await getAccessToken() else { throw APIError.noToken }
+        guard let url = URL(string: baseURL + path) else { throw APIError.invalidURL }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            if let body = String(data: data, encoding: .utf8) {
+                print("❌ POST \(path) \(httpResponse.statusCode): \(body)")
+            }
+            throw APIError.httpError(statusCode: httpResponse.statusCode)
+        }
+
+        return data
+    }
+
     func post<Body: Encodable>(path: String, body: Body) async throws {
         _ = try await postResponse(path: path, body: body)
     }
