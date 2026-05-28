@@ -34,9 +34,7 @@ class RecordingRepository {
         guard let metadataJSON = String(data: metadataData, encoding: .utf8) else {
             throw APIError.invalidResponse
         }
-
-
-        let response = try await apiService.postMultipart(
+        _ = try await apiService.postMultipart(
             path: "data_upload/single",
             fields: ["metadata": metadataJSON],
             fileFieldName: "file",
@@ -44,7 +42,6 @@ class RecordingRepository {
             fileName: recording.fileURL.lastPathComponent,
             mimeType: mimeType(for: recording.fileURL)
         )
-
     }
 
     private func mimeType(for fileURL: URL) -> String {

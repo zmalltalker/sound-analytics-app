@@ -329,10 +329,16 @@ struct RecordingView: View {
     }
 
     private func recordingDuration(for fileURL: URL, fallbackStartDate: Date, endDate: Date) -> Double {
-        let assetDuration = AVURLAsset(url: fileURL).duration.seconds
-        if assetDuration.isFinite, assetDuration > 0 {
-            return assetDuration
+        if let audioFile = try? AVAudioFile(forReading: fileURL) {
+            let sampleRate = audioFile.processingFormat.sampleRate
+            let frameCount = Double(audioFile.length)
+            let fileDuration = frameCount / sampleRate
+
+            if fileDuration.isFinite, fileDuration > 0 {
+                return fileDuration
+            }
         }
+
         return max(0, endDate.timeIntervalSince(fallbackStartDate))
     }
 }
