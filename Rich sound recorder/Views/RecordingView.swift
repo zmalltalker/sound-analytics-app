@@ -23,7 +23,6 @@ struct RecordingView: View {
 
             ScrollView {
                 VStack(spacing: 24) {
-                    micModeSection
                     spectrumSection
                     levelMeterSection
                     if showAdvanced {
@@ -128,6 +127,23 @@ struct RecordingView: View {
                 .background(Color.white.opacity(0.12))
 
             sectionLabel("Advanced")
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Microphone Mode")
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+
+                VStack(spacing: 6) {
+                    ForEach(MicMode.allCases) { mode in
+                        MicModeRow(mode: mode, isSelected: settings.micMode == mode) {
+                            guard !recorder.isRecording else { return }
+                            settings.micMode = mode
+                        }
+                    }
+                }
+            }
+
+            Divider().background(Color.white.opacity(0.08))
 
             // Sample Rate
             VStack(alignment: .leading, spacing: 6) {
