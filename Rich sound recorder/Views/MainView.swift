@@ -6,27 +6,352 @@
 //
 
 import AVFoundation
+import CoreML
+import SoundAnalysis
 import SwiftUI
+
+struct DetectionModelDescriptor: Identifiable, Hashable {
+    let id: String
+    let displayName: String
+    let summary: String
+    let bundledModelName: String?
+}
+
+struct DetectionEvent: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let startTime: Double
+    let endTime: Double
+    let confidence: Double
+
+    var timeRange: String {
+        "\(Self.formatTime(startTime)) - \(Self.formatTime(endTime))"
+    }
+
+    private static func formatTime(_ value: Double) -> String {
+        let totalSeconds = max(0, Int(value.rounded(.down)))
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%02d:%02d", minutes, seconds)
+    }
+}
+
+protocol DetectionModelProviding {
+    func availableModels() async throws -> [DetectionModelDescriptor]
+}
+
+protocol EventDetectionServicing {
+    func recognizeEvents(
+        in recording: CompletedRecording,
+        model: DetectionModelDescriptor
+    ) async throws -> [DetectionEvent]
+}
+
+struct MockDetectionModelProvider: DetectionModelProviding {
+    func availableModels() async throws -> [DetectionModelDescriptor] {
+        [
+            DetectionModelDescriptor(
+                id: "baseline-acoustic-v1",
+                displayName: "Baseline Acoustic v1",
+                summary: "Fast general-purpose detector",
+                bundledModelName: nil
+            ),
+            DetectionModelDescriptor(
+                id: "urban-events-v2",
+                displayName: "Urban Events v2",
+                summary: "Placeholder traffic and city event model",
+                bundledModelName: nil
+            ),
+            DetectionModelDescriptor(
+                id: "industrial-watch-v1",
+                displayName: "Industrial Watch v1",
+                summary: "Placeholder machine anomaly model",
+                bundledModelName: nil
+            )
+        ]
+    }
+}
+
+struct MockEventDetectionService: EventDetectionServicing {
+    func recognizeEvents(
+        in recording: CompletedRecording,
+        model: DetectionModelDescriptor
+    ) async throws -> [DetectionEvent] {
+        try await Task.sleep(for: .milliseconds(700))
+
+        let clipName = recording.fileURL.deletingPathExtension().lastPathComponent
+        let duration = max(recording.audioEndTimestamp, 3)
+        let earlyEnd = min(max(duration * 0.22, 1.2), max(duration - 0.8, 1.4))
+        let middleStart = min(max(duration * 0.34, 1.4), max(duration - 1.2, 1.6))
+        let middleEnd = min(max(duration * 0.63, middleStart + 0.8), max(duration - 0.4, middleStart + 0.9))
+        let lateStart = min(max(duration * 0.74, middleEnd + 0.15), max(duration - 1.0, middleEnd + 0.2))
+        let lateEnd = min(duration, max(duration * 0.94, lateStart + 0.5))
+
+        return [
+            DetectionEvent(
+                id: "\(model.id)-1",
+                title: "Transient event in \(clipName)",
+                startTime: 0.15,
+                endTime: earlyEnd,
+                confidence: 0.94
+            ),
+            DetectionEvent(
+                id: "\(model.id)-2",
+                title: "Sustained pattern",
+                startTime: middleStart,
+                endTime: middleEnd,
+                confidence: 0.81
+            ),
+            DetectionEvent(
+                id: "\(model.id)-3",
+                title: "Background activity",
+                startTime: lateStart,
+                endTime: lateEnd,
+                confidence: 0.67
+            )
+        ]
+    }
+}
+
+enum LocalSoundDetectionError: LocalizedError {
+    case missingBundledModel
+    case unsupportedModelSelection
+    case noResultsProduced
+
+    var errorDescription: String? {
+        switch self {
+        case .missingBundledModel:
+            return "The bundled sound classifier could not be found in the app bundle."
+        case .unsupportedModelSelection:
+            return "The selected model is not backed by a bundled classifier."
+        case .noResultsProduced:
+            return "The classifier did not return any sound events for this recording."
+        }
+    }
+}
+
+struct BundledDetectionModelProvider: DetectionModelProviding {
+    func availableModels() async throws -> [DetectionModelDescriptor] {
+        let bundledModels = [
+            DetectionModelDescriptor(
+                id: "my-sound-classifier-1",
+                displayName: "MySoundClassifier 1",
+                summary: "Bundled Create ML sound classifier",
+                bundledModelName: "MySoundClassifier 1"
+            )
+        ].filter { model in
+            guard let bundledModelName = model.bundledModelName else { return false }
+            return Bundle.main.url(forResource: bundledModelName, withExtension: "mlmodelc") != nil
+        }
+
+        return bundledModels.isEmpty ? try await MockDetectionModelProvider().availableModels() : bundledModels
+    }
+}
+
+struct BundledEventDetectionService: EventDetectionServicing {
+    let fallbackService: any EventDetectionServicing
+
+    init(fallbackService: any EventDetectionServicing = MockEventDetectionService()) {
+        self.fallbackService = fallbackService
+    }
+
+    func recognizeEvents(
+        in recording: CompletedRecording,
+        model: DetectionModelDescriptor
+    ) async throws -> [DetectionEvent] {
+        guard let bundledModelName = model.bundledModelName else {
+            return try await fallbackService.recognizeEvents(in: recording, model: model)
+        }
+
+        guard let modelURL = Bundle.main.url(forResource: bundledModelName, withExtension: "mlmodelc") else {
+            return try await fallbackService.recognizeEvents(in: recording, model: model)
+        }
+
+        let mlModel = try MLModel(contentsOf: modelURL)
+        let request = try SNClassifySoundRequest(mlModel: mlModel)
+        let analyzer = try SNAudioFileAnalyzer(url: recording.fileURL)
+        let observer = FileSoundAnalysisObserver()
+
+        return try await withCheckedThrowingContinuation { continuation in
+            observer.onFinish = {
+                let events = observer.makeEvents()
+
+                if events.isEmpty {
+                    continuation.resume(throwing: LocalSoundDetectionError.noResultsProduced)
+                } else {
+                    continuation.resume(returning: events)
+                }
+            }
+            observer.onError = { error in
+                continuation.resume(throwing: error)
+            }
+
+            do {
+                try analyzer.add(request, withObserver: observer)
+                analyzer.analyze { _ in
+                    observer.onFinish?()
+                }
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+}
+
+final class FileSoundAnalysisObserver: NSObject, SNResultsObserving {
+    struct Observation {
+        let identifier: String
+        let confidence: Double
+        let startTime: Double
+        let endTime: Double
+    }
+
+    var onFinish: (() -> Void)?
+    var onError: ((Error) -> Void)?
+
+    private(set) var observations: [Observation] = []
+
+    func request(_ request: SNRequest, didProduce result: SNResult) {
+        guard let classificationResult = result as? SNClassificationResult,
+              let topClassification = classificationResult.classifications.first else { return }
+
+        let start = classificationResult.timeRange.start.seconds
+        let duration = classificationResult.timeRange.duration.seconds
+
+        observations.append(
+            Observation(
+                identifier: topClassification.identifier,
+                confidence: Double(topClassification.confidence),
+                startTime: start,
+                endTime: start + duration
+            )
+        )
+    }
+
+    func request(_ request: SNRequest, didFailWithError error: Error) {
+        onError?(error)
+    }
+
+    func makeEvents() -> [DetectionEvent] {
+        let filtered = observations.filter { observation in
+            observation.confidence >= 0.35 &&
+            observation.identifier.caseInsensitiveCompare("background") != .orderedSame
+        }
+
+        let source = filtered.isEmpty ? observations : filtered
+        guard !source.isEmpty else { return [] }
+
+        var merged: [Observation] = []
+
+        for observation in source.sorted(by: { $0.startTime < $1.startTime }) {
+            if let last = merged.last,
+               last.identifier == observation.identifier,
+               observation.startTime - last.endTime < 0.35 {
+                merged[merged.count - 1] = Observation(
+                    identifier: last.identifier,
+                    confidence: max(last.confidence, observation.confidence),
+                    startTime: last.startTime,
+                    endTime: max(last.endTime, observation.endTime)
+                )
+            } else {
+                merged.append(observation)
+            }
+        }
+
+        return merged.enumerated().map { index, observation in
+            DetectionEvent(
+                id: "\(observation.identifier)-\(index)",
+                title: observation.identifier,
+                startTime: observation.startTime,
+                endTime: observation.endTime,
+                confidence: observation.confidence
+            )
+        }
+    }
+}
+
+struct WaveformLoader {
+    func loadSamples(from fileURL: URL, sampleCount: Int = 120) throws -> [Double] {
+        let audioFile = try AVAudioFile(forReading: fileURL)
+        let frameCount = AVAudioFrameCount(audioFile.length)
+
+        guard frameCount > 0,
+              let buffer = AVAudioPCMBuffer(pcmFormat: audioFile.processingFormat, frameCapacity: frameCount) else {
+            return []
+        }
+
+        try audioFile.read(into: buffer)
+
+        guard let channelData = buffer.floatChannelData else {
+            return []
+        }
+
+        let channelCount = Int(audioFile.processingFormat.channelCount)
+        let sampleTotal = Int(buffer.frameLength)
+        let bucketSize = max(1, sampleTotal / sampleCount)
+        var peaks: [Double] = []
+        peaks.reserveCapacity(sampleCount)
+
+        for bucketStart in stride(from: 0, to: sampleTotal, by: bucketSize) {
+            let bucketEnd = min(bucketStart + bucketSize, sampleTotal)
+            var peak: Float = 0
+
+            for frame in bucketStart..<bucketEnd {
+                var mixedSample: Float = 0
+
+                for channel in 0..<channelCount {
+                    mixedSample += abs(channelData[channel][frame])
+                }
+
+                peak = max(peak, mixedSample / Float(channelCount))
+            }
+
+            peaks.append(Double(peak))
+        }
+
+        guard let maxPeak = peaks.max(), maxPeak > 0 else {
+            return Array(repeating: 0.05, count: peaks.count)
+        }
+
+        return peaks.map { max(0.04, $0 / maxPeak) }
+    }
+}
 
 struct MainView: View {
     let loginService: AuthenticationService
+    let detectionService: any EventDetectionServicing
+    let detectionModelProvider: any DetectionModelProviding
     @State private var showProfileSheet = false
+
+    init(
+        loginService: AuthenticationService,
+        detectionService: any EventDetectionServicing = BundledEventDetectionService(),
+        detectionModelProvider: any DetectionModelProviding = BundledDetectionModelProvider()
+    ) {
+        self.loginService = loginService
+        self.detectionService = detectionService
+        self.detectionModelProvider = detectionModelProvider
+    }
 
     var body: some View {
         TabView {
-            ProjectsTab(loginService: loginService, showProfileSheet: $showProfileSheet)
+            TrainingTab(loginService: loginService, showProfileSheet: $showProfileSheet)
                 .tabItem {
-                    Label("Projects", systemImage: "folder.fill")
+                    Label("Training", systemImage: "waveform")
                 }
 
-            LabelsTab(loginService: loginService, showProfileSheet: $showProfileSheet)
+            DetectionTab(
+                showProfileSheet: $showProfileSheet,
+                detectionService: detectionService,
+                modelProvider: detectionModelProvider
+            )
                 .tabItem {
-                    Label("Labels", systemImage: "tag.fill")
+                    Label("Detection", systemImage: "dot.scope")
                 }
 
-            RecordingsTab(loginService: loginService, showProfileSheet: $showProfileSheet)
+            MoreTab(loginService: loginService, showProfileSheet: $showProfileSheet)
                 .tabItem {
-                    Label("Recordings", systemImage: "waveform")
+                    Label("More", systemImage: "square.grid.2x2")
                 }
         }
         .preferredColorScheme(.dark)
@@ -41,107 +366,125 @@ struct MainView: View {
 struct ProjectsTab: View {
     let loginService: AuthenticationService
     @Binding var showProfileSheet: Bool
+    let wrapInNavigation: Bool
 
     @State private var repository: ProjectRepository?
     @State private var labelRepository: LabelRepository?
-    @State private var clipRepository: ClipRepository?
     @State private var projects: [Project] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showNewProjectSheet = false
 
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
+    init(
+        loginService: AuthenticationService,
+        showProfileSheet: Binding<Bool>,
+        wrapInNavigation: Bool = true
+    ) {
+        self.loginService = loginService
+        _showProfileSheet = showProfileSheet
+        self.wrapInNavigation = wrapInNavigation
+    }
 
-                Group {
-                    if isLoading {
-                        ProgressView()
-                            .tint(.cyan)
-                    } else if let error = errorMessage {
-                        VStack(spacing: 12) {
-                            Image(systemName: "exclamationmark.triangle")
-                                .font(.system(size: 40))
-                                .foregroundStyle(.red.opacity(0.7))
-                            Text(error)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 40)
-                            Button("Retry") { fetchProjects() }
-                                .foregroundStyle(.cyan)
-                        }
-                    } else if projects.isEmpty {
-                        VStack(spacing: 12) {
-                            Image(systemName: "folder")
-                                .font(.system(size: 40))
-                                .foregroundStyle(.cyan.opacity(0.5))
-                            Text("No projects found")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                    } else {
-                        List {
-                            ForEach(projects) { project in
-                                ProjectListRow(
-                                    project: project,
-                                    projectRepository: repository,
-                                    labelRepository: labelRepository,
-                                    clipRepository: clipRepository
-                                ) { updatedProject in
-                                    replaceProject(updatedProject)
-                                }
-                                .listRowBackground(Color.white.opacity(0.06))
-                                .swipeActions(edge: .trailing) {
-                                    Button(role: .destructive) {
-                                        deleteProject(project)
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
+    var body: some View {
+        Group {
+            if wrapInNavigation {
+                NavigationStack {
+                    content
+                }
+            } else {
+                content
+            }
+        }
+    }
+
+    private var content: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            Group {
+                if isLoading {
+                    ProgressView()
+                        .tint(.cyan)
+                } else if let error = errorMessage {
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.red.opacity(0.7))
+                        Text(error)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+                        Button("Retry") { fetchProjects() }
+                            .foregroundStyle(.cyan)
+                    }
+                } else if projects.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "folder")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.cyan.opacity(0.5))
+                        Text("No projects found")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    List {
+                        ForEach(projects) { project in
+                            ProjectListRow(
+                                project: project,
+                                projectRepository: repository,
+                                labelRepository: labelRepository
+                            ) { updatedProject in
+                                replaceProject(updatedProject)
+                            }
+                            .listRowBackground(Color.white.opacity(0.06))
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    deleteProject(project)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
                                 }
                             }
                         }
-                        .listStyle(.insetGrouped)
-                        .scrollContentBackground(.hidden)
                     }
+                    .listStyle(.insetGrouped)
+                    .scrollContentBackground(.hidden)
                 }
             }
-            .navigationTitle("Projects")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showProfileSheet = true
-                    } label: {
-                        Image(systemName: "person.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(.cyan)
-                    }
-                }
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showNewProjectSheet = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .foregroundStyle(.cyan)
-                    }
+        }
+        .navigationTitle("Projects")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showProfileSheet = true
+                } label: {
+                    Image(systemName: "person.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.cyan)
                 }
             }
-            .sheet(isPresented: $showNewProjectSheet) {
-                if let repository {
-                    NewProjectSheet(repository: repository) {
-                        fetchProjects()
-                    }
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    showNewProjectSheet = true
+                } label: {
+                    Image(systemName: "plus")
+                        .foregroundStyle(.cyan)
                 }
             }
-            .task {
-                repository = ProjectRepository(loginService: loginService)
-                labelRepository = LabelRepository(loginService: loginService)
-                clipRepository = ClipRepository(loginService: loginService)
-                fetchProjects()
+        }
+        .sheet(isPresented: $showNewProjectSheet) {
+            if let repository {
+                NewProjectSheet(repository: repository) {
+                    fetchProjects()
+                }
             }
+        }
+        .task {
+            repository = ProjectRepository(loginService: loginService)
+            labelRepository = LabelRepository(loginService: loginService)
+            fetchProjects()
         }
     }
 
@@ -184,17 +527,15 @@ struct ProjectListRow: View {
     let project: Project
     let projectRepository: ProjectRepository?
     let labelRepository: LabelRepository?
-    let clipRepository: ClipRepository?
     let onProjectUpdated: (Project) -> Void
 
     var body: some View {
-        if let projectRepository, let labelRepository, let clipRepository {
+        if let projectRepository, let labelRepository {
             NavigationLink {
                 ProjectDetailView(
                     project: project,
                     projectRepository: projectRepository,
                     labelRepository: labelRepository,
-                    clipRepository: clipRepository,
                     onProjectUpdated: onProjectUpdated
                 )
             } label: {
@@ -228,47 +569,26 @@ struct ProjectRow: View {
     }
 }
 
-private enum ProjectDetailSection: String, CaseIterable, Identifiable {
-    case labels = "Labels"
-    case models = "Models"
-
-    var id: String { rawValue }
-}
-
 struct ProjectDetailView: View {
     let projectRepository: ProjectRepository
     let labelRepository: LabelRepository
-    let clipRepository: ClipRepository
     let onProjectUpdated: (Project) -> Void
 
-    @State private var selectedSection: ProjectDetailSection = .labels
     @State private var project: Project
     @State private var availableLabels: [RecorderLabel] = []
     @State private var isLoadingLabels = true
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var successMessage: String?
-    @State private var snippetCounts: [String: Int] = [:]
-    @State private var snippetCountErrors: [String: String] = [:]
-    @State private var modelVersions: [String] = []
-    @State private var isLoadingModelVersions = false
-    @State private var isTraining = false
-    @State private var trainingRequestUID: String?
-    @State private var trainingStatus: TrainingStatus?
-    @State private var trainingStatusHistory: [TrainingStatusReport] = []
-    @State private var trainingHistoryError: String?
-    @State private var trainingPollTask: Task<Void, Never>?
 
     init(
         project: Project,
         projectRepository: ProjectRepository,
         labelRepository: LabelRepository,
-        clipRepository: ClipRepository,
         onProjectUpdated: @escaping (Project) -> Void
     ) {
         self.projectRepository = projectRepository
         self.labelRepository = labelRepository
-        self.clipRepository = clipRepository
         self.onProjectUpdated = onProjectUpdated
         _project = State(initialValue: project)
     }
@@ -279,16 +599,6 @@ struct ProjectDetailView: View {
                 LabeledContent("Name", value: project.name)
                 LabeledContent("Description", value: project.description.isEmpty ? "No description" : project.description)
                 LabeledContent("Assigned Labels", value: "\(project.labelUIDs.count)")
-            }
-            .listRowBackground(Color.white.opacity(0.06))
-
-            Section {
-                Picker("Project Detail Section", selection: $selectedSection) {
-                    ForEach(ProjectDetailSection.allCases) { section in
-                        Text(section.rawValue).tag(section)
-                    }
-                }
-                .pickerStyle(.segmented)
             }
             .listRowBackground(Color.white.opacity(0.06))
 
@@ -310,11 +620,29 @@ struct ProjectDetailView: View {
                 .listRowBackground(Color.red.opacity(0.12))
             }
 
-            if selectedSection == .labels {
-                labelSections
-            } else {
-                modelSections
+            Section("Labels") {
+                if isLoadingLabels {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .tint(.cyan)
+                        Spacer()
+                    }
+                } else if availableLabels.isEmpty {
+                    Text("No labels available")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(availableLabels) { label in
+                        LabelAssignmentRow(
+                            label: label,
+                            isAssigned: project.labelUIDs.contains(label.uid),
+                            isSaving: isSaving,
+                            onAssign: { assign(label) }
+                        )
+                    }
+                }
             }
+            .listRowBackground(Color.white.opacity(0.06))
         }
         .scrollContentBackground(.hidden)
         .background(Color.black.ignoresSafeArea())
@@ -322,195 +650,7 @@ struct ProjectDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .task {
-            async let labelsTask: Void = loadLabels()
-            async let snippetsTask: Void = loadSnippetCounts()
-            async let modelsTask: Void = loadModelVersions()
-            _ = await (labelsTask, snippetsTask, modelsTask)
-        }
-        .onDisappear {
-            trainingPollTask?.cancel()
-        }
-    }
-
-    @ViewBuilder
-    private var labelSections: some View {
-        Section("Assigned Labels (\(project.labelUIDs.count))") {
-            if isLoadingLabels {
-                HStack {
-                    Spacer()
-                    ProgressView()
-                        .tint(.cyan)
-                    Spacer()
-                }
-            } else if project.labelUIDs.isEmpty {
-                Text("No labels assigned yet")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(assignedLabels) { label in
-                    NavigationLink {
-                        LabelDetailView(
-                            labelUID: label.uid,
-                            labelName: label.name,
-                            clipRepository: clipRepository
-                        )
-                    } label: {
-                        HStack(alignment: .top, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(label.name)
-                                    .foregroundStyle(.primary)
-
-                                if !label.description.isEmpty {
-                                    Text(label.description)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-
-                            Spacer()
-
-                            snippetCountIndicator(for: label.uid)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-
-                ForEach(missingAssignedLabelUIDs, id: \.self) { uid in
-                    NavigationLink {
-                        LabelDetailView(
-                            labelUID: uid,
-                            labelName: "Label",
-                            clipRepository: clipRepository
-                        )
-                    } label: {
-                        HStack(alignment: .center) {
-                            Text("Label ID: \(uid)")
-                                .foregroundStyle(.secondary)
-
-                            Spacer()
-
-                            snippetCountIndicator(for: uid)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-            }
-        }
-        .listRowBackground(Color.white.opacity(0.06))
-
-        Section("Available Labels") {
-            if isLoadingLabels {
-                HStack {
-                    Spacer()
-                    ProgressView()
-                        .tint(.cyan)
-                    Spacer()
-                }
-            } else if unassignedLabels.isEmpty {
-                Text("All labels assigned")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(unassignedLabels) { label in
-                    LabelAssignmentRow(
-                        label: label,
-                        isAssigned: project.labelUIDs.contains(label.uid),
-                        isSaving: isSaving,
-                        onAssign: { assign(label) }
-                    )
-                }
-            }
-        }
-        .listRowBackground(Color.white.opacity(0.06))
-    }
-
-    @ViewBuilder
-    private var modelSections: some View {
-        Section("Model Versions") {
-            if isLoadingModelVersions {
-                HStack {
-                    Spacer()
-                    ProgressView()
-                        .tint(.cyan)
-                    Spacer()
-                }
-            } else if modelVersions.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("No model versions available")
-                        .foregroundStyle(.secondary)
-
-                    Button {
-                        startTraining()
-                    } label: {
-                        if isTraining {
-                            Label("Training", systemImage: "hourglass")
-                        } else {
-                            Label("Start Training", systemImage: "play.circle.fill")
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.cyan)
-                    .disabled(isTraining)
-                }
-                .padding(.vertical, 4)
-            } else {
-                ForEach(modelVersions, id: \.self) { version in
-                    Label(version, systemImage: "cube.box")
-                }
-            }
-        }
-        .listRowBackground(Color.white.opacity(0.06))
-
-        if let trainingRequestUID {
-            Section("Training") {
-                LabeledContent("Request", value: trainingRequestUID)
-
-                if let trainingStatus {
-                    LabeledContent("Status", value: trainingStatus.displayName)
-                } else {
-                    LabeledContent("Status", value: "Waiting")
-                }
-
-                if isTraining {
-                    HStack {
-                        ProgressView()
-                            .tint(.cyan)
-                        Text("Checking training status")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                if let trainingHistoryError {
-                    Text(trainingHistoryError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                } else if trainingStatusHistory.isEmpty {
-                    Text("No status reports yet")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(trainingStatusHistory) { report in
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text(report.status.displayName)
-                                    .font(.subheadline.weight(.medium))
-                                Spacer()
-                                if let createdAt = report.createdAt {
-                                    Text(createdAt, style: .time)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-
-                            if let message = report.message, !message.isEmpty {
-                                Text(message)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-            }
-            .listRowBackground(Color.white.opacity(0.06))
+            await loadLabels()
         }
     }
 
@@ -525,73 +665,6 @@ struct ProjectDetailView: View {
         }
 
         isLoadingLabels = false
-    }
-
-    private func loadModelVersions() async {
-        isLoadingModelVersions = true
-
-        do {
-            modelVersions = try await projectRepository.availableModelVersions(projectUID: project.uid)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-
-        isLoadingModelVersions = false
-    }
-
-    private func loadSnippetCounts() async {
-        snippetCountErrors = [:]
-
-        guard !project.labelUIDs.isEmpty else { return }
-
-        for uid in project.labelUIDs {
-            await loadSnippetCount(for: uid)
-        }
-    }
-
-    private func loadSnippetCount(for labelUID: String) async {
-        do {
-            let snippets = try await clipRepository.listSnippets(labelUID: labelUID)
-            snippetCounts[labelUID] = snippets.count
-            snippetCountErrors[labelUID] = nil
-        } catch {
-            snippetCountErrors[labelUID] = error.localizedDescription
-        }
-    }
-
-    private var assignedLabels: [RecorderLabel] {
-        project.labelUIDs.compactMap { uid in
-            availableLabels.first(where: { $0.uid == uid })
-        }
-    }
-
-    private var missingAssignedLabelUIDs: [String] {
-        project.labelUIDs.filter { uid in
-            !availableLabels.contains(where: { $0.uid == uid })
-        }
-    }
-
-    private var unassignedLabels: [RecorderLabel] {
-        availableLabels.filter { label in
-            !project.labelUIDs.contains(label.uid)
-        }
-    }
-
-    @ViewBuilder
-    private func snippetCountIndicator(for labelUID: String) -> some View {
-        if let count = snippetCounts[labelUID] {
-            Text("\(count) sample\(count == 1 ? "" : "s")")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.cyan)
-        } else if snippetCountErrors[labelUID] != nil {
-            Text("Failed")
-                .font(.caption2)
-                .foregroundStyle(.red)
-        } else {
-            ProgressView()
-                .scaleEffect(0.7)
-                .tint(.cyan)
-        }
     }
 
     private func assign(_ label: RecorderLabel) {
@@ -618,72 +691,11 @@ struct ProjectDetailView: View {
                 project = updatedProject
                 onProjectUpdated(updatedProject)
                 successMessage = "\"\(label.name)\" assigned"
-                await loadSnippetCount(for: label.uid)
             } catch {
                 errorMessage = error.localizedDescription
             }
 
             isSaving = false
-        }
-    }
-
-    private func startTraining() {
-        guard !isTraining else { return }
-
-        trainingPollTask?.cancel()
-        isTraining = true
-        trainingRequestUID = nil
-        trainingStatus = nil
-        trainingStatusHistory = []
-        trainingHistoryError = nil
-        errorMessage = nil
-        successMessage = nil
-
-        trainingPollTask = Task {
-            do {
-                let request = try await projectRepository.train(projectUID: project.uid)
-                trainingRequestUID = request.requestUID
-                trainingStatus = .inProgress
-                successMessage = "Training started"
-                await loadTrainingStatusHistory(requestUID: request.requestUID)
-                try await pollTrainingStatus(requestUID: request.requestUID)
-            } catch is CancellationError {
-                isTraining = false
-            } catch {
-                errorMessage = error.localizedDescription
-                isTraining = false
-            }
-        }
-    }
-
-    private func pollTrainingStatus(requestUID: String) async throws {
-        while !Task.isCancelled {
-            let status = try await projectRepository.trainingStatus(requestUID: requestUID)
-            trainingStatus = status
-            await loadTrainingStatusHistory(requestUID: requestUID)
-
-            switch status {
-            case .success:
-                successMessage = "Training completed"
-                isTraining = false
-                await loadModelVersions()
-                return
-            case .failed:
-                errorMessage = "Training failed"
-                isTraining = false
-                return
-            case .inProgress, .missing, .unknown:
-                try await Task.sleep(nanoseconds: 5_000_000_000)
-            }
-        }
-    }
-
-    private func loadTrainingStatusHistory(requestUID: String) async {
-        do {
-            trainingStatusHistory = try await projectRepository.trainingStatusHistory(requestUID: requestUID)
-            trainingHistoryError = nil
-        } catch {
-            trainingHistoryError = "Could not load status history: \(error.localizedDescription)"
         }
     }
 
@@ -817,6 +829,7 @@ struct NewProjectSheet: View {
 struct LabelsTab: View {
     let loginService: AuthenticationService
     @Binding var showProfileSheet: Bool
+    let wrapInNavigation: Bool
 
     @State private var repository: LabelRepository?
     @State private var labels: [RecorderLabel] = []
@@ -824,80 +837,100 @@ struct LabelsTab: View {
     @State private var errorMessage: String?
     @State private var showNewLabelSheet = false
 
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
+    init(
+        loginService: AuthenticationService,
+        showProfileSheet: Binding<Bool>,
+        wrapInNavigation: Bool = true
+    ) {
+        self.loginService = loginService
+        _showProfileSheet = showProfileSheet
+        self.wrapInNavigation = wrapInNavigation
+    }
 
-                Group {
-                    if isLoading {
-                        ProgressView()
-                            .tint(.cyan)
-                    } else if let error = errorMessage {
-                        VStack(spacing: 12) {
-                            Image(systemName: "exclamationmark.triangle")
-                                .font(.system(size: 40))
-                                .foregroundStyle(.red.opacity(0.7))
-                            Text(error)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 40)
-                            Button("Retry") { fetchLabels() }
-                                .foregroundStyle(.cyan)
-                        }
-                    } else if labels.isEmpty {
-                        VStack(spacing: 12) {
-                            Image(systemName: "tag")
-                                .font(.system(size: 40))
-                                .foregroundStyle(.cyan.opacity(0.5))
-                            Text("No labels found")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                    } else {
-                        List(labels) { label in
-                            Text(label.name)
-                                .listRowBackground(Color.white.opacity(0.06))
-                        }
-                        .listStyle(.insetGrouped)
-                        .scrollContentBackground(.hidden)
-                    }
+    var body: some View {
+        Group {
+            if wrapInNavigation {
+                NavigationStack {
+                    content
                 }
+            } else {
+                content
             }
-            .navigationTitle("Labels")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showProfileSheet = true
-                    } label: {
-                        Image(systemName: "person.circle.fill")
-                            .font(.title3)
+        }
+    }
+
+    private var content: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            Group {
+                if isLoading {
+                    ProgressView()
+                        .tint(.cyan)
+                } else if let error = errorMessage {
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.red.opacity(0.7))
+                        Text(error)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+                        Button("Retry") { fetchLabels() }
                             .foregroundStyle(.cyan)
                     }
-                }
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showNewLabelSheet = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .foregroundStyle(.cyan)
+                } else if labels.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "tag")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.cyan.opacity(0.5))
+                        Text("No labels found")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
-                }
-            }
-            .sheet(isPresented: $showNewLabelSheet) {
-                if let repository {
-                    NewLabelSheet(repository: repository) {
-                        fetchLabels()
+                } else {
+                    List(labels) { label in
+                        Text(label.name)
+                            .listRowBackground(Color.white.opacity(0.06))
                     }
+                    .listStyle(.insetGrouped)
+                    .scrollContentBackground(.hidden)
                 }
             }
-            .task {
-                repository = LabelRepository(loginService: loginService)
-                fetchLabels()
+        }
+        .navigationTitle("Labels")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showProfileSheet = true
+                } label: {
+                    Image(systemName: "person.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.cyan)
+                }
             }
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    showNewLabelSheet = true
+                } label: {
+                    Image(systemName: "plus")
+                        .foregroundStyle(.cyan)
+                }
+            }
+        }
+        .sheet(isPresented: $showNewLabelSheet) {
+            if let repository {
+                NewLabelSheet(repository: repository) {
+                    fetchLabels()
+                }
+            }
+        }
+        .task {
+            repository = LabelRepository(loginService: loginService)
+            fetchLabels()
         }
     }
 
@@ -997,13 +1030,15 @@ struct NewLabelSheet: View {
     }
 }
 
-// MARK: - Recordings Tab
+// MARK: - Training Tab
 
-struct RecordingsTab: View {
+struct TrainingTab: View {
     @Binding var showProfileSheet: Bool
 
     private let repository: RecordingRepository
+    private let listRepository: RecordingListRepository
     private let labelRepository: LabelRepository
+    private let wavExportService = RecordingWAVExportService()
     @State private var lastRecordingURL: URL?
     @State private var pendingRecording: CompletedRecording?
     @State private var availableLabels: [RecorderLabel] = []
@@ -1014,10 +1049,20 @@ struct RecordingsTab: View {
     @State private var isUploading = false
     @State private var uploadMessage: String?
     @State private var uploadError: String?
+    @State private var clips: [RecordingClipGroup] = []
+    @State private var isLoadingClips = false
+    @State private var clipsError: String?
+    @State private var exportMessage: String?
+    @State private var exportError: String?
+    @State private var audioPlayer: AVAudioPlayer?
+    @State private var selectedClipGroup: RecordingClipGroup?
+    @State private var showHistorySheet = false
+    @State private var showRecordingView = false
 
     init(loginService: AuthenticationService, showProfileSheet: Binding<Bool>) {
         _showProfileSheet = showProfileSheet
         repository = RecordingRepository(loginService: loginService)
+        listRepository = RecordingListRepository(loginService: loginService)
         labelRepository = LabelRepository(loginService: loginService)
     }
 
@@ -1038,16 +1083,14 @@ struct RecordingsTab: View {
                                     .font(.title2.weight(.semibold))
                                     .foregroundStyle(.primary)
 
-                                Text("Record, label, and upload clips to the API")
+                                Text("Record, label, upload, and browse clips from the API")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                                     .multilineTextAlignment(.center)
                             }
 
-                            NavigationLink {
-                                RecordingView { url in
-                                    handleCompletedRecording(url)
-                                }
+                            Button {
+                                showRecordingView = true
                             } label: {
                                 HStack(spacing: 12) {
                                     Image(systemName: "mic.fill")
@@ -1063,6 +1106,29 @@ struct RecordingsTab: View {
                                         .fill(Color.cyan)
                                 )
                             }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                showHistorySheet = true
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "clock.arrow.circlepath")
+                                    Text("History")
+                                        .font(.headline)
+                                }
+                                .foregroundStyle(.cyan)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .stroke(Color.cyan.opacity(0.6), lineWidth: 1)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 14)
+                                                .fill(Color.white.opacity(0.04))
+                                        )
+                                )
+                            }
+                            .buttonStyle(.plain)
 
                             if isUploading {
                                 ProgressView("Uploading recording...")
@@ -1083,6 +1149,31 @@ struct RecordingsTab: View {
 
                             if let uploadError {
                                 Text(uploadError)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color.red.opacity(0.12))
+                                    )
+                            }
+
+                            if let exportMessage {
+                                Text(exportMessage)
+                                    .font(.caption)
+                                    .foregroundStyle(.green)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color.green.opacity(0.12))
+                                    )
+                            }
+
+                            if let exportError {
+                                Text(exportError)
                                     .font(.caption)
                                     .foregroundStyle(.red)
                                     .multilineTextAlignment(.center)
@@ -1116,14 +1207,21 @@ struct RecordingsTab: View {
                         .padding(.vertical, 16)
                     }
                     .listRowBackground(Color.white.opacity(0.06))
-
                 }
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
-            .navigationTitle("Recordings")
+            .navigationTitle("Training")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            .navigationDestination(isPresented: $showRecordingView) {
+                RecordingView { recording in
+                    handleCompletedRecording(recording)
+                }
+            }
+            .task {
+                loadClips()
+            }
             .sheet(isPresented: $showUploadSheet) {
                 UploadLabelSheet(
                     fileURL: pendingRecording?.fileURL,
@@ -1144,7 +1242,37 @@ struct RecordingsTab: View {
                     }
                 )
             }
+            .sheet(isPresented: $showHistorySheet) {
+                TrainingHistorySheet(
+                    clips: clips,
+                    isLoadingClips: isLoadingClips,
+                    clipsError: clipsError,
+                    onRefresh: loadClips,
+                    onSelectClipGroup: { clipGroup in
+                        selectedClipGroup = clipGroup
+                    }
+                )
+            }
+            .sheet(item: $selectedClipGroup) { clipGroup in
+                RecordingVersionsSheet(
+                    clipGroup: clipGroup,
+                    onExport: { clip in
+                        exportWAV(for: clip)
+                    },
+                    onPlay: { clip in
+                        playClip(clip)
+                    }
+                )
+            }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        loadClips()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundStyle(.cyan)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showProfileSheet = true
@@ -1201,11 +1329,543 @@ struct RecordingsTab: View {
                 uploadMessage = "Uploaded \(pendingRecording.fileURL.lastPathComponent)"
                 showUploadSheet = false
                 self.pendingRecording = nil
+                loadClips()
             } catch {
                 uploadError = error.localizedDescription
             }
             isUploading = false
         }
+    }
+
+    private func loadClips() {
+        isLoadingClips = true
+        clipsError = nil
+
+        Task {
+            do {
+                clips = try await listRepository.list()
+            } catch {
+                clipsError = error.localizedDescription
+            }
+            isLoadingClips = false
+        }
+    }
+
+    private func exportWAV(for clip: RecordingClip) {
+        exportMessage = nil
+        exportError = nil
+
+        do {
+            let fileURL = try wavExportService.exportWAV(for: clip)
+            exportMessage = "Exported \(fileURL.lastPathComponent)"
+        } catch {
+            exportError = error.localizedDescription
+        }
+    }
+
+    private func playClip(_ clip: RecordingClip) {
+        exportMessage = nil
+        exportError = nil
+
+        do {
+            let fileURL = try wavExportService.exportWAV(for: clip)
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true)
+
+            let player = try AVAudioPlayer(contentsOf: fileURL)
+            player.prepareToPlay()
+            player.play()
+
+            audioPlayer = player
+            exportMessage = "Playing \(fileURL.lastPathComponent)"
+        } catch {
+            exportError = error.localizedDescription
+        }
+    }
+}
+
+struct TrainingHistorySheet: View {
+    let clips: [RecordingClipGroup]
+    let isLoadingClips: Bool
+    let clipsError: String?
+    let onRefresh: () -> Void
+    let onSelectClipGroup: (RecordingClipGroup) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+
+                List {
+                    Section("Previous Clips") {
+                        if isLoadingClips {
+                            HStack {
+                                Spacer()
+                                ProgressView()
+                                    .tint(.cyan)
+                                Spacer()
+                            }
+                        } else if let clipsError {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text(clipsError)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                                Button("Retry", action: onRefresh)
+                                    .foregroundStyle(.cyan)
+                            }
+                        } else if clips.isEmpty {
+                            Text("No clips returned by the API")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(clips) { clipGroup in
+                                RecordingClipGroupRow(clipGroup: clipGroup) {
+                                    dismiss()
+                                    onSelectClipGroup(clipGroup)
+                                }
+                            }
+                        }
+                    }
+                    .listRowBackground(Color.white.opacity(0.06))
+                }
+            }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .navigationTitle("History")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                    .foregroundStyle(.cyan)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        onRefresh()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundStyle(.cyan)
+                    }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .presentationDetents([.medium, .large])
+    }
+}
+
+// MARK: - Detection Tab
+
+struct DetectionTab: View {
+    @Binding var showProfileSheet: Bool
+
+    let detectionService: any EventDetectionServicing
+    let modelProvider: any DetectionModelProviding
+    private let waveformLoader = WaveformLoader()
+
+    @State private var models: [DetectionModelDescriptor] = []
+    @State private var selectedModelID: DetectionModelDescriptor.ID?
+    @State private var lastRecordingName: String?
+    @State private var currentRecording: CompletedRecording?
+    @State private var results: [DetectionEvent] = []
+    @State private var waveformSamples: [Double] = []
+    @State private var isLoadingModels = false
+    @State private var modelLoadError: String?
+    @State private var isRunningDetection = false
+    @State private var isLoadingWaveform = false
+    @State private var detectionError: String?
+    @State private var waveformError: String?
+    @State private var showRecordingView = false
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+
+                List {
+                    Section {
+                        VStack(alignment: .leading, spacing: 18) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Recognition Model")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.secondary)
+                                    .textCase(.uppercase)
+
+                                if isLoadingModels {
+                                    ProgressView("Loading models...")
+                                        .tint(.cyan)
+                                } else if let modelLoadError {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text(modelLoadError)
+                                            .font(.caption)
+                                            .foregroundStyle(.red)
+                                        Button("Retry", action: loadModels)
+                                            .foregroundStyle(.cyan)
+                                    }
+                                } else {
+                                    Picker("Recognition Model", selection: $selectedModelID) {
+                                        ForEach(models) { model in
+                                            Text(model.displayName).tag(Optional(model.id))
+                                        }
+                                    }
+                                    .pickerStyle(.menu)
+
+                                    if let selectedModel {
+                                        Text(selectedModel.summary)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+
+                            Button {
+                                showRecordingView = true
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "waveform.badge.magnifyingglass")
+                                        .font(.title3)
+                                    Text("Record")
+                                        .font(.headline)
+                                }
+                                .foregroundStyle(.black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .fill(selectedModel == nil ? Color.gray : Color.cyan)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(selectedModel == nil || isLoadingModels)
+
+                            if isRunningDetection {
+                                ProgressView("Running recognition...")
+                                    .tint(.cyan)
+                            }
+
+                            if let detectionError {
+                                Text(detectionError)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color.red.opacity(0.12))
+                                    )
+                            }
+
+                            if let lastRecordingName {
+                                Text("Latest clip: \(lastRecordingName)")
+                                    .font(.caption)
+                                    .foregroundStyle(.cyan)
+                            }
+                        }
+                        .padding(.vertical, 16)
+                    }
+                    .listRowBackground(Color.white.opacity(0.06))
+
+                    if currentRecording != nil {
+                        Section("Timeline") {
+                            if isLoadingWaveform {
+                                HStack {
+                                    Spacer()
+                                    ProgressView("Building waveform...")
+                                        .tint(.cyan)
+                                    Spacer()
+                                }
+                            } else if let waveformError {
+                                Text(waveformError)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                            } else {
+                                DetectionTimelineCard(
+                                    samples: waveformSamples,
+                                    duration: currentRecording?.audioEndTimestamp ?? 0,
+                                    events: results
+                                )
+                            }
+                        }
+                        .listRowBackground(Color.white.opacity(0.06))
+                    }
+
+                }
+            }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .navigationTitle("Detection")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .navigationDestination(isPresented: $showRecordingView) {
+                RecordingView { recording in
+                    runDetection(for: recording)
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showProfileSheet = true
+                    } label: {
+                        Image(systemName: "person.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.cyan)
+                    }
+                }
+            }
+            .task {
+                loadModels()
+            }
+        }
+    }
+
+    private var selectedModel: DetectionModelDescriptor? {
+        models.first(where: { $0.id == selectedModelID })
+    }
+
+    private func loadModels() {
+        isLoadingModels = true
+        modelLoadError = nil
+
+        Task {
+            do {
+                let loadedModels = try await modelProvider.availableModels()
+                models = loadedModels
+                if selectedModelID == nil {
+                    selectedModelID = loadedModels.first?.id
+                }
+            } catch {
+                modelLoadError = error.localizedDescription
+            }
+            isLoadingModels = false
+        }
+    }
+
+    private func runDetection(for recording: CompletedRecording) {
+        guard let selectedModel else { return }
+
+        currentRecording = recording
+        lastRecordingName = recording.fileURL.lastPathComponent
+        detectionError = nil
+        waveformError = nil
+        results = []
+        waveformSamples = []
+        isRunningDetection = true
+        isLoadingWaveform = true
+
+        Task {
+            do {
+                waveformSamples = try waveformLoader.loadSamples(from: recording.fileURL)
+            } catch {
+                waveformError = error.localizedDescription
+            }
+            isLoadingWaveform = false
+        }
+
+        Task {
+            do {
+                results = try await detectionService.recognizeEvents(in: recording, model: selectedModel)
+            } catch {
+                detectionError = error.localizedDescription
+            }
+            isRunningDetection = false
+        }
+    }
+}
+
+struct DetectionTimelineCard: View {
+    let samples: [Double]
+    let duration: Double
+    let events: [DetectionEvent]
+
+    private let eventColors: [Color] = [.cyan, .orange, .green, .pink, .yellow]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ZStack(alignment: .bottomLeading) {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color.white.opacity(0.05))
+
+                GeometryReader { geometry in
+                    ZStack(alignment: .bottomLeading) {
+                        ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
+                            let color = eventColors[index % eventColors.count]
+                            let xStart = xPosition(for: event.startTime, width: geometry.size.width)
+                            let xEnd = xPosition(for: event.endTime, width: geometry.size.width)
+
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(color.opacity(0.18))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(color.opacity(0.55), lineWidth: 1)
+                                )
+                                .frame(width: max(8, xEnd - xStart), height: geometry.size.height - 18)
+                                .offset(x: xStart, y: 0)
+                        }
+
+                        HStack(alignment: .bottom, spacing: 2) {
+                            ForEach(Array(displaySamples.enumerated()), id: \.offset) { index, sample in
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(barColor(for: sampleTime(for: index)))
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: max(10, (geometry.size.height - 26) * sample))
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 10)
+                    }
+                }
+                .frame(height: 140)
+            }
+            .frame(height: 140)
+
+            HStack {
+                Text("00:00")
+                Spacer()
+                Text(formattedTime(duration))
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+
+            if !events.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
+                        HStack(spacing: 10) {
+                            Circle()
+                                .fill(eventColors[index % eventColors.count])
+                                .frame(width: 8, height: 8)
+
+                            Text(event.title)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.primary)
+
+                            Spacer()
+
+                            Text(event.timeRange)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 8)
+    }
+
+    private var displaySamples: [Double] {
+        samples.isEmpty ? Array(repeating: 0.08, count: 80) : samples
+    }
+
+    private func barColor(for time: Double) -> Color {
+        if let index = events.firstIndex(where: { time >= $0.startTime && time <= $0.endTime }) {
+            return eventColors[index % eventColors.count]
+        }
+
+        return .white.opacity(0.75)
+    }
+
+    private func sampleTime(for index: Int) -> Double {
+        guard !displaySamples.isEmpty else { return 0 }
+        return duration * (Double(index) / Double(max(displaySamples.count - 1, 1)))
+    }
+
+    private func xPosition(for time: Double, width: Double) -> Double {
+        guard duration > 0 else { return 0 }
+        let progress = min(max(time / duration, 0), 1)
+        return progress * width
+    }
+
+    private func formattedTime(_ value: Double) -> String {
+        let totalSeconds = max(0, Int(value.rounded(.down)))
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%02d:%02d", minutes, seconds)
+    }
+}
+
+// MARK: - More Tab
+
+struct MoreTab: View {
+    let loginService: AuthenticationService
+    @Binding var showProfileSheet: Bool
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+
+                List {
+                    Section("Browse") {
+                        NavigationLink {
+                            ProjectsTab(
+                                loginService: loginService,
+                                showProfileSheet: $showProfileSheet,
+                                wrapInNavigation: false
+                            )
+                        } label: {
+                            moreRow(
+                                title: "Projects",
+                                subtitle: "Manage project groups and assigned labels",
+                                systemImage: "folder.fill"
+                            )
+                        }
+
+                        NavigationLink {
+                            LabelsTab(
+                                loginService: loginService,
+                                showProfileSheet: $showProfileSheet,
+                                wrapInNavigation: false
+                            )
+                        } label: {
+                            moreRow(
+                                title: "Labels",
+                                subtitle: "Create and review training labels",
+                                systemImage: "tag.fill"
+                            )
+                        }
+                    }
+                    .listRowBackground(Color.white.opacity(0.06))
+                }
+            }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .navigationTitle("More")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showProfileSheet = true
+                    } label: {
+                        Image(systemName: "person.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.cyan)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func moreRow(title: String, subtitle: String, systemImage: String) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: systemImage)
+                .font(.title3)
+                .foregroundStyle(.cyan)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .foregroundStyle(.primary)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 6)
     }
 }
 
@@ -1234,10 +1894,6 @@ struct UploadLabelSheet: View {
                             Section("Recording") {
                                 Text(fileURL?.lastPathComponent ?? "Unknown file")
                                     .foregroundStyle(.primary)
-
-                                if let fileURL {
-                                    RecordingPlaybackControl(fileURL: fileURL)
-                                }
                             }
                             .listRowBackground(Color.white.opacity(0.06))
 
@@ -1314,123 +1970,6 @@ struct UploadLabelSheet: View {
         }
         .preferredColorScheme(.dark)
         .presentationDetents([.medium, .large])
-    }
-}
-
-struct RecordingPlaybackControl: View {
-    let fileURL: URL
-
-    @State private var audioPlayer: AVAudioPlayer?
-    @State private var isPlaying = false
-    @State private var currentTime: TimeInterval = 0
-    @State private var duration: TimeInterval = 0
-    @State private var loadError: String?
-    @State private var playbackTimer: Timer?
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Slider(
-                value: Binding(
-                    get: { currentTime },
-                    set: { newValue in
-                        currentTime = newValue
-                        audioPlayer?.currentTime = newValue
-                    }
-                ),
-                in: 0...max(duration, 0.1)
-            )
-            .disabled(audioPlayer == nil)
-
-            HStack {
-                Text(timeLabel(for: currentTime))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                Text(timeLabel(for: duration))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Button(action: togglePlayback) {
-                Label(isPlaying ? "Pause Sample" : "Play Sample", systemImage: isPlaying ? "pause.fill" : "play.fill")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.cyan)
-            .disabled(audioPlayer == nil)
-
-            if let loadError {
-                Text(loadError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .padding(.vertical, 4)
-        .onAppear(perform: preparePlayer)
-        .onDisappear(perform: stopPlayback)
-    }
-
-    private func preparePlayer() {
-        guard audioPlayer == nil else { return }
-
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            audioPlayer = try AVAudioPlayer(contentsOf: fileURL)
-            audioPlayer?.prepareToPlay()
-            duration = audioPlayer?.duration ?? 0
-            currentTime = 0
-            loadError = nil
-        } catch {
-            loadError = error.localizedDescription
-        }
-    }
-
-    private func togglePlayback() {
-        guard let player = audioPlayer else { return }
-
-        if player.isPlaying {
-            player.pause()
-            isPlaying = false
-        } else {
-            player.play()
-            isPlaying = true
-            startTimer()
-        }
-    }
-
-    private func startTimer() {
-        playbackTimer?.invalidate()
-        let timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in
-            guard let player = audioPlayer else { return }
-
-            currentTime = player.currentTime
-            if !player.isPlaying, isPlaying {
-                isPlaying = false
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        playbackTimer = timer
-    }
-
-    private func stopPlayback() {
-        audioPlayer?.stop()
-        audioPlayer = nil
-        isPlaying = false
-        currentTime = 0
-        playbackTimer?.invalidate()
-        playbackTimer = nil
-    }
-
-    private func timeLabel(for seconds: TimeInterval) -> String {
-        guard seconds.isFinite else { return "--:--" }
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = seconds >= 3600 ? [.hour, .minute, .second] : [.minute, .second]
-        formatter.zeroFormattingBehavior = [.pad]
-        return formatter.string(from: seconds) ?? "--:--"
     }
 }
 
