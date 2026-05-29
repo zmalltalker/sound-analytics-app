@@ -134,9 +134,15 @@ struct BundledDetectionModelProvider: DetectionModelProviding {
     func availableModels() async throws -> [DetectionModelDescriptor] {
         let bundledModels = [
             DetectionModelDescriptor(
+                id: "demo-sound-classifier-1",
+                displayName: "Demo sound classifier 1",
+                summary: "Create ML classifier trained on DATASEC with 22 environmental sound classes",
+                bundledModelName: "Demo sound classifier 1"
+            ),
+            DetectionModelDescriptor(
                 id: "my-sound-classifier-1",
                 displayName: "MySoundClassifier 1",
-                summary: "Bundled Create ML sound classifier",
+                summary: "Bundled Create ML drone-focused sound classifier",
                 bundledModelName: "MySoundClassifier 1"
             )
         ].filter { model in
