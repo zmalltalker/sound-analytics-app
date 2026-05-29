@@ -343,6 +343,112 @@ struct RecordingView: View {
     }
 }
 
+struct AdvancedSettingsView: View {
+    @Binding var settings: AudioSettings
+    let isRecording: Bool
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Microphone Mode")
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+
+                        VStack(spacing: 6) {
+                            ForEach(MicMode.allCases) { mode in
+                                MicModeRow(mode: mode, isSelected: settings.micMode == mode) {
+                                    guard !isRecording else { return }
+                                    settings.micMode = mode
+                                }
+                            }
+                        }
+                    }
+
+                    Divider().background(Color.white.opacity(0.08))
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Sample Rate")
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+
+                        Picker("Sample Rate", selection: $settings.sampleRate) {
+                            ForEach(RecordSampleRate.allCases) { rate in
+                                Text("\(rate.label)  -  \(rate.detail)").tag(rate)
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .frame(height: 110)
+                        .clipped()
+                        .disabled(isRecording)
+
+                        Text("Nyquist: \(nyquistLabel) - highest reproducible frequency at this rate")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+
+                    Divider().background(Color.white.opacity(0.08))
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Channels")
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+
+                        Picker("Channels", selection: $settings.channels) {
+                            ForEach(RecordChannels.allCases) { channel in
+                                Text(channel.label).tag(channel)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .disabled(isRecording)
+                    }
+
+                    Divider().background(Color.white.opacity(0.08))
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Encoding")
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+
+                        Picker("Encoding", selection: $settings.encoding) {
+                            ForEach(RecordEncoding.allCases) { encoding in
+                                Text(encoding.rawValue).tag(encoding)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .disabled(isRecording)
+
+                        Text(settings.encoding.detail)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .padding()
+            }
+        }
+        .navigationTitle("Advanced")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Done") {
+                    dismiss()
+                }
+                .foregroundStyle(.cyan)
+            }
+        }
+    }
+
+    private var nyquistLabel: String {
+        let hz = settings.sampleRate.nyquist
+        return hz >= 1_000 ? "\(Int(hz / 1_000)) kHz" : "\(Int(hz)) Hz"
+    }
+}
+
 // MARK: - MicModeRow
 
 struct MicModeRow: View {

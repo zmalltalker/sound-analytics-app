@@ -16,8 +16,26 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>ai.resonyx.ios-recorder.msal</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>msauth.ai.resonyx.ios-recorder</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>msauthv2</string>
+		<string>msauthv3</string>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Record audio in various formats for sound analysis and machine learning.</string>
 	<key>UIApplicationSceneManifest</key>
