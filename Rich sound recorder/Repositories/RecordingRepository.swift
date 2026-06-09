@@ -15,7 +15,6 @@ class RecordingRepository {
         let label_uid: String
         let start_timestamp: Int
         let end_timestamp: Int
-        let audio_end_timestamp: Double
     }
 
     init(loginService: AuthenticationService) {
@@ -26,14 +25,14 @@ class RecordingRepository {
         let metadata = UploadMetadata(
             label_uid: labelUID,
             start_timestamp: recording.startTimestamp,
-            end_timestamp: recording.endTimestamp,
-            audio_end_timestamp: recording.audioEndTimestamp
+            end_timestamp: recording.endTimestamp
         )
 
         let metadataData = try JSONEncoder().encode(metadata)
         guard let metadataJSON = String(data: metadataData, encoding: .utf8) else {
             throw APIError.invalidResponse
         }
+
         _ = try await apiService.postMultipart(
             path: "data_upload/single",
             fields: ["metadata": metadataJSON],
