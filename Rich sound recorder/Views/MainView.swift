@@ -1057,6 +1057,22 @@ struct TrainingTab: View {
     @State private var isLoadingProjectLabelCounts = false
     @State private var projectLabelCountError: String?
     @State private var projectLabelCountsRevision = 0
+    @State private var availableModelVersions: [String] = []
+    @State private var selectedModelVersion: String?
+    @State private var selectedModelSpecs: ProjectModelSpecs?
+    @State private var trainingRequestUID: String?
+    @State private var trainingStatus: String?
+    @State private var trainingHistory: [TrainingStatusReport] = []
+    @State private var isStartingTraining = false
+    @State private var isLoadingTrainingStatus = false
+    @State private var isLoadingModelVersions = false
+    @State private var isLoadingModelSpecs = false
+    @State private var isDownloadingModel = false
+    @State private var trainingError: String?
+    @State private var modelVersionError: String?
+    @State private var modelSpecsError: String?
+    @State private var modelDownloadError: String?
+    @State private var downloadedModelURL: URL?
     @State private var lastRecordingURL: URL?
     @State private var pendingRecording: CompletedRecording?
     @State private var availableLabels: [RecorderLabel] = []
@@ -1243,6 +1259,257 @@ struct TrainingTab: View {
                                 }
                             }
 
+                            if let selectedProject {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack {
+                                        Text("Training")
+                                            .font(.headline)
+                                            .foregroundStyle(.primary)
+
+                                        Spacer()
+
+                                        if isLoadingTrainingStatus {
+                                            ProgressView()
+                                                .controlSize(.small)
+                                                .tint(.cyan)
+                                        }
+                                    }
+
+                                    if let trainingError {
+                                        Text(trainingError)
+                                            .font(.caption)
+                                            .foregroundStyle(.red)
+                                    }
+
+                                    Button {
+                                        startTraining(for: selectedProject)
+                                    } label: {
+                                        HStack(spacing: 8) {
+                                            if isStartingTraining {
+                                                ProgressView()
+                                                    .controlSize(.small)
+                                                    .tint(.black)
+                                            } else {
+                                                Image(systemName: "cpu.fill")
+                                            }
+                                            Text(isStartingTraining ? "Starting Training..." : "Train Model")
+                                                .font(.headline)
+                                        }
+                                        .foregroundStyle(.black)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 14)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 14)
+                                                .fill(Color.orange)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(isStartingTraining)
+
+                                    if let trainingStatus {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            HStack {
+                                                Text("Status")
+                                                    .font(.caption.weight(.semibold))
+                                                    .foregroundStyle(.secondary)
+                                                    .textCase(.uppercase)
+                                                Spacer()
+                                                Text(trainingStatus)
+                                                    .font(.subheadline.weight(.semibold))
+                                                    .foregroundStyle(trainingStatusColor(for: trainingStatus))
+                                            }
+
+                                            if let trainingRequestUID {
+                                                Text("Request: \(trainingRequestUID)")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.secondary)
+                                                    .textSelection(.enabled)
+                                            }
+
+                                            if !trainingHistory.isEmpty {
+                                                VStack(alignment: .leading, spacing: 6) {
+                                                    Text("Recent Updates")
+                                                        .font(.caption.weight(.semibold))
+                                                        .foregroundStyle(.secondary)
+                                                        .textCase(.uppercase)
+
+                                                    ForEach(trainingHistory.prefix(3)) { report in
+                                                        VStack(alignment: .leading, spacing: 2) {
+                                                            Text(report.status)
+                                                                .font(.caption.weight(.semibold))
+                                                                .foregroundStyle(.primary)
+
+                                                            if let message = report.message, !message.isEmpty {
+                                                                Text(message)
+                                                                    .font(.caption2)
+                                                                    .foregroundStyle(.secondary)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 14)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 14)
+                                                .fill(Color.white.opacity(0.04))
+                                        )
+                                    }
+                                }
+                            }
+
+                            if let selectedProject {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack {
+                                        Text("Trained Models")
+                                            .font(.headline)
+                                            .foregroundStyle(.primary)
+
+                                        Spacer()
+
+                                        if isLoadingModelVersions {
+                                            ProgressView()
+                                                .controlSize(.small)
+                                                .tint(.cyan)
+                                        } else {
+                                            Button {
+                                                loadProjectModelVersions(forceRefresh: true)
+                                            } label: {
+                                                Image(systemName: "arrow.clockwise")
+                                                    .foregroundStyle(.cyan)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+
+                                    if let modelVersionError {
+                                        Text(modelVersionError)
+                                            .font(.caption)
+                                            .foregroundStyle(.red)
+                                    }
+
+                                    if availableModelVersions.isEmpty {
+                                        Text(isLoadingModelVersions ? "Loading trained models..." : "No trained model versions available for this project")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 14)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 14)
+                                                    .fill(Color.white.opacity(0.04))
+                                            )
+                                    } else {
+                                        Picker("Model Version", selection: $selectedModelVersion) {
+                                            ForEach(availableModelVersions, id: \.self) { version in
+                                                Text(version)
+                                                    .tag(Optional(version))
+                                            }
+                                        }
+                                        .pickerStyle(.menu)
+                                        .tint(.cyan)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 14)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 14)
+                                                .fill(Color.white.opacity(0.04))
+                                        )
+                                    }
+
+                                    if let modelSpecsError {
+                                        Text(modelSpecsError)
+                                            .font(.caption)
+                                            .foregroundStyle(.red)
+                                    }
+
+                                    if isLoadingModelSpecs {
+                                        ProgressView("Loading model specs...")
+                                            .tint(.cyan)
+                                    } else if let selectedModelSpecs, let selectedModelVersion {
+                                        VStack(alignment: .leading, spacing: 10) {
+                                            Text(selectedModelVersion)
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(.primary)
+
+                                            HStack(spacing: 12) {
+                                                modelInfoChip(
+                                                    title: "Labels",
+                                                    value: "\(selectedModelSpecs.label_dict.count)"
+                                                )
+                                                modelInfoChip(
+                                                    title: "Samples",
+                                                    value: selectedModelSpecs.trained_sample_size.map(String.init) ?? "n/a"
+                                                )
+                                            }
+
+                                            VStack(alignment: .leading, spacing: 6) {
+                                                Text("Included Labels")
+                                                    .font(.caption.weight(.semibold))
+                                                    .foregroundStyle(.secondary)
+                                                    .textCase(.uppercase)
+
+                                                Text(selectedModelSpecs.label_dict.keys.sorted().joined(separator: ", "))
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                            }
+
+                                            if let modelDownloadError {
+                                                Text(modelDownloadError)
+                                                    .font(.caption)
+                                                    .foregroundStyle(.red)
+                                            }
+
+                                            HStack(spacing: 12) {
+                                                Button {
+                                                    downloadIOSModel(for: selectedProject, modelVersion: selectedModelVersion, specs: selectedModelSpecs)
+                                                } label: {
+                                                    HStack(spacing: 8) {
+                                                        if isDownloadingModel {
+                                                            ProgressView()
+                                                                .controlSize(.small)
+                                                                .tint(.black)
+                                                        } else {
+                                                            Image(systemName: "arrow.down.circle.fill")
+                                                        }
+                                                        Text(isDownloadingModel ? "Downloading..." : "Download iOS Model")
+                                                            .font(.headline)
+                                                    }
+                                                    .foregroundStyle(.black)
+                                                    .frame(maxWidth: .infinity)
+                                                    .padding(.vertical, 14)
+                                                    .background(
+                                                        RoundedRectangle(cornerRadius: 14)
+                                                            .fill(Color.green)
+                                                    )
+                                                }
+                                                .buttonStyle(.plain)
+                                                .disabled(isDownloadingModel)
+
+                                                if let downloadedModelURL {
+                                                    ShareLink(item: downloadedModelURL) {
+                                                        Image(systemName: "square.and.arrow.up")
+                                                            .foregroundStyle(.cyan)
+                                                            .padding(14)
+                                                            .background(
+                                                                RoundedRectangle(cornerRadius: 14)
+                                                                    .fill(Color.white.opacity(0.04))
+                                                            )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 14)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 14)
+                                                .fill(Color.white.opacity(0.04))
+                                        )
+                                    }
+                                }
+                            }
+
                             if isUploading {
                                 ProgressView("Uploading recording...")
                                     .tint(.cyan)
@@ -1340,6 +1607,11 @@ struct TrainingTab: View {
             }
             .task(id: selectedProjectUID) {
                 loadSelectedProjectLabelCounts()
+                resetTrainingStateForSelectedProject()
+                loadProjectModelVersions()
+            }
+            .task(id: selectedModelVersion) {
+                loadSelectedModelSpecs()
             }
             .sheet(isPresented: $showUploadSheet) {
                 UploadLabelSheet(
@@ -1451,6 +1723,26 @@ struct TrainingTab: View {
         .overlay(
             RoundedRectangle(cornerRadius: 14)
                 .stroke(Color.green.opacity(0.2), lineWidth: 1)
+        )
+    }
+
+    private func modelInfoChip(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(0.05))
         )
     }
 
@@ -1579,6 +1871,228 @@ struct TrainingTab: View {
                 )
             }
             isLoadingProjectLabelCounts = false
+        }
+    }
+
+    private func loadProjectModelVersions(forceRefresh: Bool = false) {
+        guard let selectedProject else {
+            availableModelVersions = []
+            selectedModelVersion = nil
+            selectedModelSpecs = nil
+            modelVersionError = nil
+            modelSpecsError = nil
+            downloadedModelURL = nil
+            isLoadingModelVersions = false
+            return
+        }
+
+        guard let projectRepository else {
+            modelVersionError = "Project repository unavailable"
+            isLoadingModelVersions = false
+            return
+        }
+
+        if !forceRefresh, !availableModelVersions.isEmpty {
+            return
+        }
+
+        isLoadingModelVersions = true
+        modelVersionError = nil
+        selectedModelSpecs = nil
+        modelSpecsError = nil
+        downloadedModelURL = nil
+
+        Task {
+            do {
+                let versions = try await projectRepository.availableModelVersions(projectUID: selectedProject.uid)
+                availableModelVersions = versions
+
+                if let selectedModelVersion,
+                   versions.contains(selectedModelVersion) {
+                    self.selectedModelVersion = selectedModelVersion
+                } else {
+                    self.selectedModelVersion = versions.first
+                }
+            } catch {
+                availableModelVersions = []
+                selectedModelVersion = nil
+                modelVersionError = error.localizedDescription
+            }
+            isLoadingModelVersions = false
+        }
+    }
+
+    private func startTraining(for project: Project) {
+        guard let projectRepository else { return }
+
+        isStartingTraining = true
+        trainingError = nil
+
+        Task {
+            do {
+                let request = try await projectRepository.startTraining(projectUID: project.uid)
+                trainingRequestUID = request.requestUID
+                await refreshTrainingStatus(for: project, requestUID: request.requestUID)
+                pollTrainingStatus(for: project, requestUID: request.requestUID)
+            } catch {
+                trainingError = error.localizedDescription
+            }
+            isStartingTraining = false
+        }
+    }
+
+    private func refreshTrainingStatus(for project: Project, requestUID: String) async {
+        guard let projectRepository else { return }
+
+        isLoadingTrainingStatus = true
+        trainingError = nil
+
+        do {
+            let snapshot = try await projectRepository.trainingStatus(trainingRequestUID: requestUID)
+            let history = try await projectRepository.trainingStatusHistory(trainingRequestUID: requestUID)
+            let latestFirstHistory = orderedTrainingHistory(history)
+            let resolvedStatus = resolveTrainingStatus(
+                snapshotStatus: snapshot.status,
+                history: latestFirstHistory
+            )
+            trainingStatus = resolvedStatus
+            trainingHistory = latestFirstHistory
+            print(
+                "Training status resolved | request=\(requestUID) | snapshot=\(snapshot.status) | displayed=\(resolvedStatus) | history=\(latestFirstHistory.map(\.status))"
+            )
+
+            if isTerminalTrainingStatus(resolvedStatus) {
+                loadProjectModelVersions(forceRefresh: true)
+            }
+        } catch {
+            trainingError = error.localizedDescription
+        }
+
+        isLoadingTrainingStatus = false
+    }
+
+    private func pollTrainingStatus(for project: Project, requestUID: String) {
+        Task {
+            for _ in 0..<30 {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                guard trainingRequestUID == requestUID else { return }
+                await refreshTrainingStatus(for: project, requestUID: requestUID)
+
+                if let trainingStatus, isTerminalTrainingStatus(trainingStatus) {
+                    return
+                }
+            }
+        }
+    }
+
+    private func resetTrainingStateForSelectedProject() {
+        trainingRequestUID = nil
+        trainingStatus = nil
+        trainingHistory = []
+        trainingError = nil
+        isLoadingTrainingStatus = false
+        isStartingTraining = false
+    }
+
+    private func isTerminalTrainingStatus(_ status: String) -> Bool {
+        let normalized = status.lowercased()
+        return normalized.contains("complete")
+            || normalized.contains("completed")
+            || normalized.contains("success")
+            || normalized.contains("failed")
+            || normalized.contains("error")
+    }
+
+    private func trainingStatusColor(for status: String) -> Color {
+        let normalized = status.lowercased()
+        if normalized.contains("complete") || normalized.contains("success") {
+            return .green
+        }
+        if normalized.contains("fail") || normalized.contains("error") {
+            return .red
+        }
+        return .orange
+    }
+
+    private func orderedTrainingHistory(_ history: [TrainingStatusReport]) -> [TrainingStatusReport] {
+        guard history.count > 1 else { return history }
+
+        let sorted = history.sorted { lhs, rhs in
+            (lhs.createdAt ?? "") > (rhs.createdAt ?? "")
+        }
+        return sorted
+    }
+
+    private func resolveTrainingStatus(
+        snapshotStatus: String,
+        history: [TrainingStatusReport]
+    ) -> String {
+        let trimmedSnapshot = snapshotStatus.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedSnapshot = trimmedSnapshot.lowercased()
+
+        if trimmedSnapshot.isEmpty
+            || normalizedSnapshot == "missing"
+            || normalizedSnapshot == "status missing" {
+            if let historyStatus = history.first?.status.trimmingCharacters(in: .whitespacesAndNewlines),
+               !historyStatus.isEmpty {
+                return historyStatus
+            }
+            return "Queued"
+        }
+
+        return trimmedSnapshot
+    }
+
+    private func loadSelectedModelSpecs() {
+        guard let selectedProject,
+              let selectedModelVersion,
+              let projectRepository else {
+            selectedModelSpecs = nil
+            modelSpecsError = nil
+            isLoadingModelSpecs = false
+            return
+        }
+
+        isLoadingModelSpecs = true
+        modelSpecsError = nil
+        downloadedModelURL = nil
+
+        Task {
+            do {
+                selectedModelSpecs = try await projectRepository.modelSpecs(
+                    projectUID: selectedProject.uid,
+                    modelVersion: selectedModelVersion
+                )
+            } catch {
+                selectedModelSpecs = nil
+                modelSpecsError = error.localizedDescription
+            }
+            isLoadingModelSpecs = false
+        }
+    }
+
+    private func downloadIOSModel(for project: Project, modelVersion: String, specs: ProjectModelSpecs) {
+        guard let projectRepository else { return }
+
+        isDownloadingModel = true
+        modelDownloadError = nil
+        downloadedModelURL = nil
+
+        let samplingRate = 16_000
+        let inputNSamples = max(specs.trained_sample_size ?? samplingRate, 1)
+
+        Task {
+            do {
+                downloadedModelURL = try await projectRepository.downloadIOSModel(
+                    projectUID: project.uid,
+                    modelVersion: modelVersion,
+                    samplingRate: samplingRate,
+                    inputNSamples: inputNSamples
+                )
+            } catch {
+                modelDownloadError = error.localizedDescription
+            }
+            isDownloadingModel = false
         }
     }
 
