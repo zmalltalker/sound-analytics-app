@@ -57,6 +57,30 @@ class ProjectRepository {
         return try JSONDecoder().decode([String].self, from: data)
     }
 
+    func statistics(projectUID: String? = nil) async throws -> [String: Int] {
+        let path: String
+        if let projectUID {
+            path = "statistics?project_uid=\(projectUID)"
+        } else {
+            path = "statistics"
+        }
+
+        let data = try await apiService.get(path: path)
+        return try JSONDecoder().decode([String: Int].self, from: data)
+    }
+
+    func recordingsCount(projectUID: String? = nil) async throws -> Int {
+        let path: String
+        if let projectUID {
+            path = "statistics/recordings?project_uid=\(projectUID)"
+        } else {
+            path = "statistics/recordings"
+        }
+
+        let data = try await apiService.get(path: path)
+        return try JSONDecoder().decode(Int.self, from: data)
+    }
+
     func modelSpecs(projectUID: String, modelVersion: String) async throws -> ProjectModelSpecs {
         let escapedModelVersion = modelVersion.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? modelVersion
         let data = try await apiService.get(

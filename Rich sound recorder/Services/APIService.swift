@@ -26,6 +26,10 @@ class APIService {
         try await getResponse(path: path, acceptHeader: acceptHeader).data
     }
 
+    func getAbsoluteURLString(_ urlString: String, acceptHeader: String? = "application/json") async throws -> Data {
+        try await getAbsoluteURLResponse(urlString, acceptHeader: acceptHeader).data
+    }
+
     func getResponse(path: String, acceptHeader: String? = "application/json") async throws -> APIResponse {
         guard loginService.isLoggedIn else {
             log("GET \(path) blocked: not authenticated")
@@ -60,6 +64,48 @@ class APIService {
         }
 
         logResponse("GET", path: path, response: httpResponse, data: data)
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: httpResponse.statusCode)
+        }
+
+        return APIResponse(data: data, httpResponse: httpResponse)
+    }
+
+    func getAbsoluteURLResponse(_ urlString: String, acceptHeader: String? = "application/json") async throws -> APIResponse {
+        guard loginService.isLoggedIn else {
+            log("GET \(urlString) blocked: not authenticated")
+            throw APIError.notAuthenticated
+        }
+
+        let token = await getAccessToken()
+        guard let token else {
+            log("GET \(urlString) blocked: token unavailable")
+            throw APIError.noToken
+        }
+
+        guard let url = URL(string: urlString) else {
+            log("GET \(urlString) failed: invalid URL")
+            throw APIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let acceptHeader {
+            request.setValue(acceptHeader, forHTTPHeaderField: "Accept")
+        }
+
+        logRequest("GET", path: urlString, details: acceptHeader.map { "accept=\($0)" })
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            log("GET \(urlString) failed: invalid HTTP response")
+            throw APIError.invalidResponse
+        }
+
+        logResponse("GET", path: urlString, response: httpResponse, data: data)
 
         guard (200...299).contains(httpResponse.statusCode) else {
             throw APIError.httpError(statusCode: httpResponse.statusCode)

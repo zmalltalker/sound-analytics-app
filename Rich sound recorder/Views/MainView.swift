@@ -1511,6 +1511,12 @@ struct TrainingTab: View {
             return
         }
 
+        guard let projectRepository else {
+            projectLabelCountError = "Project repository unavailable"
+            isLoadingProjectLabelCounts = false
+            return
+        }
+
         let labelUIDs = selectedProject.labelUIDs
 
         if !forceRefresh, !labelUIDs.isEmpty,
@@ -1531,9 +1537,23 @@ struct TrainingTab: View {
 
         Task {
             do {
+                let statistics = try await projectRepository.statistics(projectUID: selectedProject.uid)
+                print("Project statistics | project=\(selectedProject.uid) | values=\(statistics)")
+                let labelsByName = Dictionary(
+                    uniqueKeysWithValues: projectLabels(for: selectedProject).map { ($0.name, $0.uid) }
+                )
+                var resolvedStatisticsByLabelUID: [String: Int] = [:]
+
+                for (key, value) in statistics {
+                    if selectedProject.labelUIDs.contains(key) {
+                        resolvedStatisticsByLabelUID[key] = value
+                    } else if let labelUID = labelsByName[key] {
+                        resolvedStatisticsByLabelUID[labelUID] = value
+                    }
+                }
+
                 for labelUID in labelUIDs {
-                    let clipGroups = try await listRepository.list(labelUID: labelUID)
-                    let decodedRecordingCount = clipGroups.reduce(0) { $0 + $1.versions.count }
+                    let decodedRecordingCount = resolvedStatisticsByLabelUID[labelUID] ?? 0
                     let resolvedCount = max(
                         decodedRecordingCount,
                         optimisticLabelRecordingCounts[labelUID] ?? 0
