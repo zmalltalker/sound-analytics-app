@@ -16,6 +16,7 @@ class APIService {
 
     let baseURL = "https://webrecorder.rest.dev.edgeaudioanalytics.no/rest/"
     private let loginService: AuthenticationService
+    private let isLoggingEnabled = true
 
     init(loginService: AuthenticationService) {
         self.loginService = loginService
@@ -26,39 +27,22 @@ class APIService {
     }
 
     func getResponse(path: String, acceptHeader: String? = "application/json") async throws -> APIResponse {
-        print("🔍 API GET Request Debug:")
-        print("   Path: \(path)")
-        print("   Is logged in: \(loginService.isLoggedIn)")
-
-        // Ensure we have a token
         guard loginService.isLoggedIn else {
-            print("   ❌ Not authenticated")
+            log("GET \(path) blocked: not authenticated")
             throw APIError.notAuthenticated
         }
 
-        // Get fresh token (uses cached token or refreshes silently)
-        print("   🔐 Acquiring access token...")
         let token = await getAccessToken()
-
-        if let token = token {
-            print("   ✅ Token acquired: \(token.prefix(20))...")
-            print("   Token length: \(token.count) chars")
-        } else {
-            print("   ❌ Failed to acquire token")
+        guard let token else {
+            log("GET \(path) blocked: token unavailable")
             throw APIError.noToken
         }
 
-        guard let token = token else {
-            throw APIError.noToken
-        }
-
-        // Build URL
         guard let url = URL(string: baseURL + path) else {
-            print("   ❌ Invalid URL: \(baseURL + path)")
+            log("GET \(path) failed: invalid URL")
             throw APIError.invalidURL
         }
 
-        // Create request with auth header
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -66,34 +50,18 @@ class APIService {
             request.setValue(acceptHeader, forHTTPHeaderField: "Accept")
         }
 
-        print("   🌐 Sending GET request to: \(url)")
-        print("   Headers:")
-        print("     Authorization: Bearer \(token.prefix(20))...")
-        if let acceptHeader {
-            print("     Accept: \(acceptHeader)")
-        } else {
-            print("     Accept: <omitted>")
-        }
+        logRequest("GET", path: path, details: acceptHeader.map { "accept=\($0)" })
 
-        // Make request
         let (data, response) = try await URLSession.shared.data(for: request)
 
-        // Check response
         guard let httpResponse = response as? HTTPURLResponse else {
-            print("   ❌ Invalid HTTP response")
+            log("GET \(path) failed: invalid HTTP response")
             throw APIError.invalidResponse
         }
 
-        print("   📥 Response received:")
-        print("     Status: \(httpResponse.statusCode)")
-        print("     Headers: \(httpResponse.allHeaderFields)")
-
-        if let responseString = String(data: data, encoding: .utf8) {
-            print("     Body: \(responseString.prefix(200))")
-        }
+        logResponse("GET", path: path, response: httpResponse, data: data)
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            print("   ❌ HTTP Error \(httpResponse.statusCode)")
             throw APIError.httpError(statusCode: httpResponse.statusCode)
         }
 
@@ -118,12 +86,11 @@ class APIService {
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
+        logRequest("POST", path: path, details: "empty-body")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        logResponse("POST", path: path, response: httpResponse, data: data)
         guard (200...299).contains(httpResponse.statusCode) else {
-            if let body = String(data: data, encoding: .utf8) {
-                print("❌ POST \(path) \(httpResponse.statusCode): \(body)")
-            }
             throw APIError.httpError(statusCode: httpResponse.statusCode)
         }
 
@@ -139,12 +106,11 @@ class APIService {
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
+        logRequest("POST", path: path, details: "empty-body")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        logResponse("POST", path: path, response: httpResponse, data: data)
         guard (200...299).contains(httpResponse.statusCode) else {
-            if let body = String(data: data, encoding: .utf8) {
-                print("❌ POST \(path) \(httpResponse.statusCode): \(body)")
-            }
             throw APIError.httpError(statusCode: httpResponse.statusCode)
         }
 
@@ -166,12 +132,11 @@ class APIService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
 
+        logRequest("POST", path: path, details: request.httpBody.flatMap(jsonSummary(from:)) ?? "json-body")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        logResponse("POST", path: path, response: httpResponse, data: data)
         guard (200...299).contains(httpResponse.statusCode) else {
-            if let body = String(data: data, encoding: .utf8) {
-                print("❌ POST \(path) \(httpResponse.statusCode): \(body)")
-            }
             throw APIError.httpError(statusCode: httpResponse.statusCode)
         }
 
@@ -212,12 +177,19 @@ class APIService {
         body.append("\r\n")
         body.append("--\(boundary)--\r\n")
 
+        let fieldSummary = fields
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: ", ")
+        logRequest(
+            "POST multipart",
+            path: path,
+            details: "file=\(fileName) (\(fileData.count) bytes, \(mimeType)), fields=[\(fieldSummary)]"
+        )
         let (data, response) = try await URLSession.shared.upload(for: request, from: body)
         guard let httpResponse = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        logResponse("POST multipart", path: path, response: httpResponse, data: data)
         guard (200...299).contains(httpResponse.statusCode) else {
-            if let body = String(data: data, encoding: .utf8) {
-                print("❌ POST multipart \(path) \(httpResponse.statusCode): \(body)")
-            }
             throw APIError.httpError(statusCode: httpResponse.statusCode)
         }
 
@@ -230,6 +202,52 @@ class APIService {
                 continuation.resume(returning: token)
             }
         }
+    }
+
+    private func log(_ message: String) {
+        guard isLoggingEnabled else { return }
+        print("API \(message)")
+    }
+
+    private func logRequest(_ method: String, path: String, details: String?) {
+        guard isLoggingEnabled else { return }
+        if let details, !details.isEmpty {
+            print("API ↑ \(method) \(path) | \(details)")
+        } else {
+            print("API ↑ \(method) \(path)")
+        }
+    }
+
+    private func logResponse(_ method: String, path: String, response: HTTPURLResponse, data: Data) {
+        guard isLoggingEnabled else { return }
+
+        let contentType = response.value(forHTTPHeaderField: "Content-Type") ?? "unknown"
+        let preview = responsePreview(from: data)
+        print("API ↓ \(method) \(path) | status=\(response.statusCode) contentType=\(contentType) body=\(preview)")
+    }
+
+    private func responsePreview(from data: Data) -> String {
+        if data.isEmpty {
+            return "<empty>"
+        }
+
+        if let string = String(data: data, encoding: .utf8)?
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ") {
+            return String(string.prefix(240))
+        }
+
+        return "<\(data.count) bytes binary>"
+    }
+
+    private func jsonSummary(from data: Data) -> String {
+        if let string = String(data: data, encoding: .utf8)?
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ") {
+            return String(string.prefix(240))
+        }
+
+        return "json-body \(data.count) bytes"
     }
 }
 

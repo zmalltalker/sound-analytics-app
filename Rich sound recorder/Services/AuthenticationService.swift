@@ -35,7 +35,7 @@ class AuthenticationService {
             )
             config.cacheConfig.keychainSharingGroup = "ai.resonyx.ios-recorder"
             application = try MSALPublicClientApplication(configuration: config)
-            print("✅ MSAL application initialized")
+            print("Auth initialized")
 
             // Check if user is already logged in
             loadCurrentAccount()
@@ -54,12 +54,12 @@ class AuthenticationService {
                 currentAccount = account
                 username = account.username
                 isLoggedIn = true
-                print("✅ Found cached account: \(account.username ?? "unknown")")
+                print("Auth restored account: \(account.username ?? "unknown")")
             } else {
-                print("ℹ️ No cached account found")
+                print("Auth: no cached account")
             }
         } catch {
-            print("⚠️ Could not load cached account: \(error)")
+            print("Auth restore failed: \(error)")
         }
     }
 
@@ -86,22 +86,20 @@ class AuthenticationService {
         )
         parameters.promptType = .selectAccount  // Don't use broker
 
-        print("🔐 Starting interactive login...")
+        print("Auth login started")
 
         application.acquireToken(with: parameters) { [weak self] result, error in
             if let error = error {
-                print("❌ Login failed: \(error)")
+                print("Auth login failed: \(error)")
                 return
             }
 
             guard let result = result else {
-                print("❌ No result from login")
+                print("Auth login failed: empty result")
                 return
             }
 
-            print("✅ Login successful!")
-            print("   Account: \(result.account.username ?? "unknown")")
-            print("   Token: \(result.accessToken.prefix(20))...")
+            print("Auth login succeeded: \(result.account.username ?? "unknown")")
 
             guard let self = self else { return }
             Task { @MainActor in
@@ -116,33 +114,27 @@ class AuthenticationService {
     func acquireTokenSilently(completion: @escaping (String?) -> Void) {
         guard let application = application,
               let account = currentAccount else {
-            print("❌ No account to acquire token for")
+            print("Auth token skipped: no account")
             completion(nil)
             return
         }
-
-        print("🔐 Acquiring token silently with scopes: \(scopes)")
 
         let parameters = MSALSilentTokenParameters(scopes: scopes, account: account)
 
         application.acquireTokenSilent(with: parameters) { result, error in
             if let error = error {
-                print("⚠️ Silent token acquisition failed: \(error)")
-                print("   Error details: \((error as NSError).userInfo)")
+                print("Auth token refresh failed: \(error)")
                 completion(nil)
                 return
             }
 
             guard let result = result else {
-                print("❌ No result from silent token acquisition")
+                print("Auth token refresh failed: empty result")
                 completion(nil)
                 return
             }
 
-            print("✅ Token acquired silently")
-            print("   Scopes in token: \(result.scopes)")
-            print("   Token expires: \(result.expiresOn ?? Date())")
-            print("Access token: '\(result.accessToken)'")
+            print("Auth token refreshed")
             completion(result.accessToken)
         }
     }
@@ -151,7 +143,7 @@ class AuthenticationService {
     func logout() {
         guard let application = application,
               let account = currentAccount else {
-            print("⚠️ No account to logout")
+            print("Auth logout skipped: no account")
             return
         }
 
@@ -160,9 +152,9 @@ class AuthenticationService {
             currentAccount = nil
             username = nil
             isLoggedIn = false
-            print("✅ Logged out successfully")
+            print("Auth logout succeeded")
         } catch {
-            print("❌ Logout failed: \(error)")
+            print("Auth logout failed: \(error)")
         }
     }
 

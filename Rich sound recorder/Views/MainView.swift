@@ -1039,12 +1039,24 @@ struct NewLabelSheet: View {
 // MARK: - Training Tab
 
 struct TrainingTab: View {
+    let loginService: AuthenticationService
     @Binding var showProfileSheet: Bool
 
+    @State private var projectRepository: ProjectRepository?
     private let repository: RecordingRepository
     private let listRepository: RecordingListRepository
     private let labelRepository: LabelRepository
     private let wavExportService = RecordingWAVExportService()
+    @State private var projects: [Project] = []
+    @State private var allLabels: [RecorderLabel] = []
+    @State private var isLoadingProjects = false
+    @State private var projectLoadingError: String?
+    @State private var selectedProjectUID: String?
+    @State private var labelRecordingCounts: [String: Int] = [:]
+    @State private var optimisticLabelRecordingCounts: [String: Int] = [:]
+    @State private var isLoadingProjectLabelCounts = false
+    @State private var projectLabelCountError: String?
+    @State private var projectLabelCountsRevision = 0
     @State private var lastRecordingURL: URL?
     @State private var pendingRecording: CompletedRecording?
     @State private var availableLabels: [RecorderLabel] = []
@@ -1064,8 +1076,10 @@ struct TrainingTab: View {
     @State private var selectedClipGroup: RecordingClipGroup?
     @State private var showHistorySheet = false
     @State private var showRecordingView = false
+    private let isProjectCountLoggingEnabled = true
 
     init(loginService: AuthenticationService, showProfileSheet: Binding<Bool>) {
+        self.loginService = loginService
         _showProfileSheet = showProfileSheet
         repository = RecordingRepository(loginService: loginService)
         listRepository = RecordingListRepository(loginService: loginService)
@@ -1135,6 +1149,99 @@ struct TrainingTab: View {
                                 )
                             }
                             .buttonStyle(.plain)
+
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack {
+                                    Text("Project")
+                                        .font(.headline)
+                                        .foregroundStyle(.primary)
+
+                                    Spacer()
+
+                                    if isLoadingProjects {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                            .tint(.cyan)
+                                    } else {
+                                        Button {
+                                            loadProjects()
+                                        } label: {
+                                            Image(systemName: "arrow.clockwise")
+                                                .foregroundStyle(.cyan)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+
+                                if let projectLoadingError {
+                                    Text(projectLoadingError)
+                                        .font(.caption)
+                                        .foregroundStyle(.red)
+                                }
+
+                                if projects.isEmpty {
+                                    Text(isLoadingProjects ? "Loading projects..." : "No projects available")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 14)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 14)
+                                                .fill(Color.white.opacity(0.04))
+                                        )
+                                } else {
+                                    Picker("Project", selection: $selectedProjectUID) {
+                                        ForEach(projects) { project in
+                                            Text(project.name)
+                                                .tag(Optional(project.uid))
+                                        }
+                                    }
+                                    .pickerStyle(.menu)
+                                    .tint(.cyan)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 14)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 14)
+                                            .fill(Color.white.opacity(0.04))
+                                    )
+                                }
+                            }
+
+                            if let selectedProject {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text("Project Labels")
+                                        .font(.headline)
+                                        .foregroundStyle(.primary)
+
+                                    if let projectLabelCountError {
+                                        Text(projectLabelCountError)
+                                            .font(.caption)
+                                            .foregroundStyle(.red)
+                                    }
+
+                                    if selectedProject.labelUIDs.isEmpty {
+                                        Text("No labels assigned to this project")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 14)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 14)
+                                                    .fill(Color.white.opacity(0.04))
+                                            )
+                                    } else {
+                                        VStack(spacing: 10) {
+                                            ForEach(projectLabels(for: selectedProject)) { label in
+                                                projectLabelRow(label: label)
+                                            }
+                                        }
+                                        .id(projectLabelCountsRevision)
+                                    }
+                                }
+                            }
 
                             if isUploading {
                                 ProgressView("Uploading recording...")
@@ -1226,7 +1333,13 @@ struct TrainingTab: View {
                 }
             }
             .task {
+                projectRepository = ProjectRepository(loginService: loginService)
+                loadAllLabels()
+                loadProjects()
                 loadClips()
+            }
+            .task(id: selectedProjectUID) {
+                loadSelectedProjectLabelCounts()
             }
             .sheet(isPresented: $showUploadSheet) {
                 UploadLabelSheet(
@@ -1297,11 +1410,239 @@ struct TrainingTab: View {
         pendingRecording = recording
         uploadMessage = nil
         uploadError = nil
-        selectedLabelUID = nil
         labelLoadingError = nil
         availableLabels = []
         showUploadSheet = true
         loadLabelsForUpload()
+    }
+
+    private var selectedProject: Project? {
+        guard let selectedProjectUID else { return nil }
+        return projects.first(where: { $0.uid == selectedProjectUID })
+    }
+
+    private func projectLabelRow(label: RecorderLabel) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                if !label.description.isEmpty {
+                    Text(label.description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer()
+
+            Text(labelRecordingCountText(for: label.uid))
+                .font(.headline.monospacedDigit())
+                .foregroundStyle(.green)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.white.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.green.opacity(0.2), lineWidth: 1)
+        )
+    }
+
+    private func projectLabels(for project: Project) -> [RecorderLabel] {
+        let labelsByUID = Dictionary(uniqueKeysWithValues: allLabels.map { ($0.uid, $0) })
+        return project.labelUIDs.map { labelUID in
+            labelsByUID[labelUID] ?? RecorderLabel(
+                uid: labelUID,
+                guid: labelUID,
+                name: labelUID,
+                user_id: "",
+                duration: 0,
+                description: ""
+            )
+        }
+    }
+
+    private func loadAllLabels() {
+        Task {
+            do {
+                allLabels = try await labelRepository.list()
+            } catch {
+                if projectLabelCountError == nil {
+                    projectLabelCountError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func loadProjects() {
+        guard let projectRepository else { return }
+
+        isLoadingProjects = true
+        projectLoadingError = nil
+
+        Task {
+            do {
+                let loadedProjects = try await projectRepository.list()
+                projects = loadedProjects
+
+                if let selectedProjectUID,
+                   loadedProjects.contains(where: { $0.uid == selectedProjectUID }) {
+                    self.selectedProjectUID = selectedProjectUID
+                } else {
+                    self.selectedProjectUID = loadedProjects.first?.uid
+                }
+            } catch {
+                projectLoadingError = error.localizedDescription
+            }
+            isLoadingProjects = false
+        }
+    }
+
+    private func loadSelectedProjectLabelCounts(forceRefresh: Bool = false) {
+        guard let selectedProject else {
+            projectLabelCountError = nil
+            isLoadingProjectLabelCounts = false
+            return
+        }
+
+        let labelUIDs = selectedProject.labelUIDs
+
+        if !forceRefresh, !labelUIDs.isEmpty,
+           labelUIDs.allSatisfy({ labelRecordingCounts[$0] != nil }) {
+            projectLabelCountError = nil
+            isLoadingProjectLabelCounts = false
+            return
+        }
+
+        guard !labelUIDs.isEmpty else {
+            projectLabelCountError = nil
+            isLoadingProjectLabelCounts = false
+            return
+        }
+
+        isLoadingProjectLabelCounts = true
+        projectLabelCountError = nil
+
+        Task {
+            do {
+                for labelUID in labelUIDs {
+                    let clipGroups = try await listRepository.list(labelUID: labelUID)
+                    let decodedRecordingCount = clipGroups.reduce(0) { $0 + $1.versions.count }
+                    let resolvedCount = max(
+                        decodedRecordingCount,
+                        optimisticLabelRecordingCounts[labelUID] ?? 0
+                    )
+                    setLabelRecordingCount(resolvedCount, for: labelUID)
+                    logProjectCount(
+                        "resolved",
+                        projectUID: selectedProject.uid,
+                        labelUID: labelUID,
+                        decodedRecordingCount: decodedRecordingCount,
+                        displayedCount: resolvedCount
+                    )
+                }
+            } catch {
+                projectLabelCountError = error.localizedDescription
+                logProjectCount(
+                    "failed",
+                    projectUID: selectedProject.uid,
+                    labelUID: nil,
+                    decodedRecordingCount: nil,
+                    displayedCount: nil,
+                    error: error.localizedDescription
+                )
+            }
+            isLoadingProjectLabelCounts = false
+        }
+    }
+
+    private func labelRecordingCountText(for labelUID: String) -> String {
+        if isLoadingProjectLabelCounts && labelRecordingCounts[labelUID] == nil {
+            return "Loading..."
+        }
+
+        let count = max(
+            labelRecordingCounts[labelUID] ?? 0,
+            optimisticLabelRecordingCounts[labelUID] ?? 0
+        )
+        return String(count)
+    }
+
+    private func registerSuccessfulUpload(forLabelUID labelUID: String) {
+        let affectedProjectUIDs = projects
+            .filter { $0.labelUIDs.contains(labelUID) }
+            .map(\.uid)
+
+        if !affectedProjectUIDs.isEmpty {
+            let currentCount = max(
+                labelRecordingCounts[labelUID] ?? 0,
+                optimisticLabelRecordingCounts[labelUID] ?? 0
+            )
+            let updatedCount = currentCount + 1
+            setOptimisticLabelRecordingCount(updatedCount, for: labelUID)
+            setLabelRecordingCount(updatedCount, for: labelUID)
+            logProjectCount(
+                "optimistic+1",
+                projectUID: affectedProjectUIDs[0],
+                labelUID: labelUID,
+                decodedRecordingCount: currentCount,
+                displayedCount: updatedCount
+            )
+        }
+
+        if let selectedProjectUID, affectedProjectUIDs.contains(selectedProjectUID) {
+            loadSelectedProjectLabelCounts(forceRefresh: true)
+            Task {
+                try? await Task.sleep(nanoseconds: 750_000_000)
+                loadSelectedProjectLabelCounts(forceRefresh: true)
+            }
+        }
+    }
+
+    private func setLabelRecordingCount(_ count: Int, for labelUID: String) {
+        var updatedCounts = labelRecordingCounts
+        updatedCounts[labelUID] = count
+        labelRecordingCounts = updatedCounts
+        projectLabelCountsRevision += 1
+    }
+
+    private func setOptimisticLabelRecordingCount(_ count: Int, for labelUID: String) {
+        var updatedCounts = optimisticLabelRecordingCounts
+        updatedCounts[labelUID] = count
+        optimisticLabelRecordingCounts = updatedCounts
+    }
+
+    private func logProjectCount(
+        _ phase: String,
+        projectUID: String,
+        labelUID: String?,
+        decodedRecordingCount: Int?,
+        displayedCount: Int?,
+        error: String? = nil
+    ) {
+        guard isProjectCountLoggingEnabled else { return }
+
+        var parts: [String] = ["Project count \(phase)", "project=\(projectUID)"]
+        if let labelUID {
+            parts.append("label=\(labelUID)")
+        }
+        if let decodedRecordingCount {
+            parts.append("decodedCount=\(decodedRecordingCount)")
+        }
+        if let displayedCount {
+            parts.append("displayed=\(displayedCount)")
+        }
+        if let error {
+            parts.append("error=\(error)")
+        }
+
+        print(parts.joined(separator: " | "))
     }
 
     private func loadLabelsForUpload() {
@@ -1311,8 +1652,22 @@ struct TrainingTab: View {
         Task {
             do {
                 let labels = try await labelRepository.list()
-                availableLabels = labels
-                selectedLabelUID = labels.first?.uid
+                let filteredLabels: [RecorderLabel]
+
+                if let selectedProject {
+                    let allowedLabelUIDs = Set(selectedProject.labelUIDs)
+                    filteredLabels = labels.filter { allowedLabelUIDs.contains($0.uid) }
+                } else {
+                    filteredLabels = labels
+                }
+
+                availableLabels = filteredLabels
+                if let selectedLabelUID,
+                   filteredLabels.contains(where: { $0.uid == selectedLabelUID }) {
+                    self.selectedLabelUID = selectedLabelUID
+                } else {
+                    self.selectedLabelUID = filteredLabels.first?.uid
+                }
             } catch {
                 labelLoadingError = error.localizedDescription
             }
@@ -1327,14 +1682,13 @@ struct TrainingTab: View {
         uploadError = nil
         isUploading = true
 
-        print("🚀 uploadPendingRecording called for \(pendingRecording.fileURL.lastPathComponent)")
-
         Task {
             do {
                 try await repository.uploadRecording(recording: pendingRecording, labelUID: selectedLabelUID)
                 uploadMessage = "Uploaded \(pendingRecording.fileURL.lastPathComponent)"
                 showUploadSheet = false
                 self.pendingRecording = nil
+                registerSuccessfulUpload(forLabelUID: selectedLabelUID)
                 loadClips()
             } catch {
                 uploadError = error.localizedDescription

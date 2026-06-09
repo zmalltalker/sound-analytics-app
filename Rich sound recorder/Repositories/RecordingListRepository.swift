@@ -10,6 +10,7 @@ import Foundation
 @MainActor
 class RecordingListRepository {
     private let isDebugLoggingEnabled = false
+    private let isSummaryLoggingEnabled = true
     private let apiService: APIService
 
     init(loginService: AuthenticationService) {
@@ -37,6 +38,14 @@ class RecordingListRepository {
 
         if let avroRecords = try? AvroContainerHeader.decodeAnnotatedAudioDataRecords(from: response.data) {
             let groupedRecords = groupByDataID(records: avroRecords)
+            logSummary(
+                start: start,
+                end: end,
+                labelUID: labelUID,
+                recordCount: avroRecords.count,
+                groupCount: groupedRecords.count,
+                source: "avro"
+            )
             if isDebugLoggingEnabled {
                 print("   Avro records decoded: \(avroRecords.count)")
                 print("   Avro record groups: \(groupedRecords.count)")
@@ -50,9 +59,33 @@ class RecordingListRepository {
         let jsonObject = try JSONSerialization.jsonObject(with: response.data)
         guard let array = jsonObject as? [Any] else { return [] }
 
-        return array
+        let groups = array
             .compactMap(RecordingClip.init(jsonObject:))
             .map { RecordingClipGroup(versions: [$0]) }
+        logSummary(
+            start: start,
+            end: end,
+            labelUID: labelUID,
+            recordCount: groups.count,
+            groupCount: groups.count,
+            source: "json"
+        )
+        return groups
+    }
+
+    private func logSummary(
+        start: Int,
+        end: Int,
+        labelUID: String?,
+        recordCount: Int,
+        groupCount: Int,
+        source: String
+    ) {
+        guard isSummaryLoggingEnabled else { return }
+        let labelText = labelUID ?? "all-labels"
+        print(
+            "Clips list summary | label=\(labelText) start=\(start) end=\(end) source=\(source) records=\(recordCount) groups=\(groupCount)"
+        )
     }
 
     private func debugResponse(_ response: APIService.APIResponse) {
