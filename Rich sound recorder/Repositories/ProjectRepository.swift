@@ -12,6 +12,13 @@ class ProjectRepository {
     private let baseURL = "https://webrecorder.rest.dev.edgeaudioanalytics.no/rest/"
     private let apiService: APIService
 
+    private struct DownloadedModelMetadata: Codable {
+        let displayName: String
+        let labelNames: [String]
+        let modelVersion: String
+        let projectUID: String
+    }
+
     private struct UIDsRequest: Encodable {
         let uids: [String]
     }
@@ -108,7 +115,9 @@ class ProjectRepository {
         projectUID: String,
         modelVersion: String,
         samplingRate: Int,
-        inputNSamples: Int
+        inputNSamples: Int,
+        displayName: String? = nil,
+        labelNames: [String] = []
     ) async throws -> URL {
         let data = try await apiService.get(
             path: iosModelDownloadPath(
@@ -126,6 +135,19 @@ class ProjectRepository {
             .replacingOccurrences(of: " ", with: "_")
         let fileURL = docsDirectory.appendingPathComponent(fileName)
         try data.write(to: fileURL, options: .atomic)
+
+        if let displayName {
+            let metadata = DownloadedModelMetadata(
+                displayName: displayName,
+                labelNames: labelNames,
+                modelVersion: modelVersion,
+                projectUID: projectUID
+            )
+            let metadataURL = fileURL.appendingPathExtension("metadata.json")
+            let metadataData = try JSONEncoder().encode(metadata)
+            try metadataData.write(to: metadataURL, options: .atomic)
+        }
+
         return fileURL
     }
 
