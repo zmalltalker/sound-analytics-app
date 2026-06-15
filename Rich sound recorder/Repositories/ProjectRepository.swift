@@ -193,7 +193,15 @@ class ProjectRepository {
 
     func trainingStatusHistory(trainingRequestUID: String) async throws -> [TrainingStatusReport] {
         let data = try await apiService.get(path: "trainer/\(trainingRequestUID)/status_history")
-        return try JSONDecoder().decode([TrainingStatusReport].self, from: data)
+        do {
+            return try JSONDecoder().decode([TrainingStatusReport].self, from: data)
+        } catch {
+            let rawPayload = String(data: data, encoding: .utf8) ?? "<\(data.count) bytes binary>"
+            print(
+                "Training status history decode failed | request=\(trainingRequestUID) | error=\(error.localizedDescription) | raw=\(rawPayload)"
+            )
+            throw error
+        }
     }
 
     private func iosModelDownloadPath(

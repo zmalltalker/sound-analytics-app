@@ -16,7 +16,7 @@ class APIService {
 
     let baseURL = "https://webrecorder.rest.dev.edgeaudioanalytics.no/rest/"
     private let loginService: AuthenticationService
-    private let isLoggingEnabled = true
+    private let isLoggingEnabled = false
 
     init(loginService: AuthenticationService) {
         self.loginService = loginService

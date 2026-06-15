@@ -1607,7 +1607,7 @@ struct TrainingTab: View {
     @State private var selectedClipGroup: RecordingClipGroup?
     @State private var showHistorySheet = false
     @State private var showRecordingView = false
-    private let isProjectCountLoggingEnabled = true
+    private let isProjectCountLoggingEnabled = false
 
     init(loginService: AuthenticationService, showProfileSheet: Binding<Bool>) {
         self.loginService = loginService
@@ -1796,6 +1796,21 @@ struct TrainingTab: View {
                                             .foregroundStyle(.red)
                                     }
 
+                                    if let trainingReadinessMessage = trainingReadinessMessage(for: selectedProject) {
+                                        Text(trainingReadinessMessage)
+                                            .font(.caption)
+                                            .foregroundStyle(.orange)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .multilineTextAlignment(.leading)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 10)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 12)
+                                                    .fill(Color.orange.opacity(0.12))
+                                            )
+                                    }
+
                                     Button {
                                         startTraining(for: selectedProject)
                                     } label: {
@@ -1819,7 +1834,7 @@ struct TrainingTab: View {
                                         )
                                     }
                                     .buttonStyle(.plain)
-                                    .disabled(isStartingTraining)
+                                    .disabled(isStartingTraining || !canTrainProject(selectedProject))
 
                                     if let trainingStatus {
                                         VStack(alignment: .leading, spacing: 8) {
@@ -1832,6 +1847,19 @@ struct TrainingTab: View {
                                                 Text(trainingStatus)
                                                     .font(.subheadline.weight(.semibold))
                                                     .foregroundStyle(trainingStatusColor(for: trainingStatus))
+                                            }
+
+                                            if let failureMessage = latestTrainingFailureMessage,
+                                               isFailureTrainingStatus(trainingStatus) {
+                                                Text(failureMessage)
+                                                    .font(.caption)
+                                                    .foregroundStyle(.red)
+                                                    .padding(.horizontal, 12)
+                                                    .padding(.vertical, 10)
+                                                    .background(
+                                                        RoundedRectangle(cornerRadius: 12)
+                                                            .fill(Color.red.opacity(0.12))
+                                                    )
                                             }
 
                                             if let trainingRequestUID {
@@ -2275,6 +2303,38 @@ struct TrainingTab: View {
         }
     }
 
+    private func projectRecordingCount(for labelUID: String) -> Int {
+        max(
+            labelRecordingCounts[labelUID] ?? 0,
+            optimisticLabelRecordingCounts[labelUID] ?? 0
+        )
+    }
+
+    private func populatedProjectLabelCount(for project: Project) -> Int {
+        project.labelUIDs.reduce(into: 0) { count, labelUID in
+            if projectRecordingCount(for: labelUID) > 0 {
+                count += 1
+            }
+        }
+    }
+
+    private func canTrainProject(_ project: Project) -> Bool {
+        populatedProjectLabelCount(for: project) >= 2
+    }
+
+    private func trainingReadinessMessage(for project: Project) -> String? {
+        let populatedLabelCount = populatedProjectLabelCount(for: project)
+        guard populatedLabelCount < 2 else { return nil }
+        return "Training requires recordings for at least 2 labels. Currently ready: \(populatedLabelCount)."
+    }
+
+    private var latestTrainingFailureMessage: String? {
+        trainingHistory.first { report in
+            isFailureTrainingStatus(report.status)
+                && !(report.message?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        }?.message
+    }
+
     private func resolvedModelLabelNames(for specs: ProjectModelSpecs) -> [String] {
         let labelsByUID = Dictionary(uniqueKeysWithValues: allLabels.map { ($0.uid, $0.name) })
 
@@ -2370,7 +2430,6 @@ struct TrainingTab: View {
         Task {
             do {
                 let statistics = try await projectRepository.statistics(projectUID: selectedProject.uid)
-                print("Project statistics | project=\(selectedProject.uid) | values=\(statistics)")
                 let labelsByName = Dictionary(
                     uniqueKeysWithValues: projectLabels(for: selectedProject).map { ($0.name, $0.uid) }
                 )
@@ -2497,9 +2556,6 @@ struct TrainingTab: View {
             )
             trainingStatus = resolvedStatus
             trainingHistory = latestFirstHistory
-            print(
-                "Training status resolved | request=\(requestUID) | snapshot=\(snapshot.status) | displayed=\(resolvedStatus) | history=\(latestFirstHistory.map(\.status))"
-            )
 
             if isTerminalTrainingStatus(resolvedStatus) {
                 loadProjectModelVersions(forceRefresh: true)
@@ -2543,12 +2599,17 @@ struct TrainingTab: View {
             || normalized.contains("error")
     }
 
+    private func isFailureTrainingStatus(_ status: String) -> Bool {
+        let normalized = status.lowercased()
+        return normalized.contains("fail") || normalized.contains("error")
+    }
+
     private func trainingStatusColor(for status: String) -> Color {
         let normalized = status.lowercased()
         if normalized.contains("complete") || normalized.contains("success") {
             return .green
         }
-        if normalized.contains("fail") || normalized.contains("error") {
+        if isFailureTrainingStatus(status) {
             return .red
         }
         return .orange
@@ -3237,8 +3298,8 @@ struct DetectionTab: View {
         let duration = recordingDuration(for: url, fallbackStartDate: startDate, endDate: recordingEndedAt)
         let recording = CompletedRecording(
             fileURL: url,
-            startTimestamp: Int(startDate.timeIntervalSince1970),
-            endTimestamp: Int(recordingEndedAt.timeIntervalSince1970),
+            startTimestamp: startDate.timeIntervalSince1970,
+            endTimestamp: recordingEndedAt.timeIntervalSince1970,
             audioEndTimestamp: duration
         )
 

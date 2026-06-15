@@ -223,8 +223,8 @@ struct RecordingView: View {
                             onComplete(
                                 CompletedRecording(
                                     fileURL: url,
-                                    startTimestamp: Int(startDate.timeIntervalSince1970),
-                                    endTimestamp: Int(recordingEndedAt.timeIntervalSince1970),
+                                    startTimestamp: startDate.timeIntervalSince1970,
+                                    endTimestamp: recordingEndedAt.timeIntervalSince1970,
                                     audioEndTimestamp: duration
                                 )
                             )

@@ -13,8 +13,8 @@ class RecordingRepository {
 
     private struct UploadMetadata: Encodable {
         let label_uid: String
-        let start_timestamp: Int
-        let end_timestamp: Int
+        let start_timestamp: Double
+        let end_timestamp: Double
     }
 
     init(loginService: AuthenticationService) {

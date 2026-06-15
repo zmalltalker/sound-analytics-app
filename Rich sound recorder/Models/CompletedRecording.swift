@@ -9,7 +9,7 @@ import Foundation
 
 struct CompletedRecording {
     let fileURL: URL
-    let startTimestamp: Int
-    let endTimestamp: Int
+    let startTimestamp: Double
+    let endTimestamp: Double
     let audioEndTimestamp: Double
 }
