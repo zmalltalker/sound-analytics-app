@@ -12,6 +12,7 @@
 
 /* Begin PBXFileReference section */
 		2955F0172FE1710E001CA4AF /* Resonyx redesign spec.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "Resonyx redesign spec.md"; sourceTree = "<group>"; };
+		2955F0192FE17116001CA4AF /* Wireframes.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = Wireframes.pdf; sourceTree = "<group>"; };
 		2967B89E2F584E090033B1BF /* Resonyx mobile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Resonyx mobile.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -39,6 +40,7 @@
 			isa = PBXGroup;
 			children = (
 				2955F0172FE1710E001CA4AF /* Resonyx redesign spec.md */,
+				2955F0192FE17116001CA4AF /* Wireframes.pdf */,
 				2967B8A02F584E090033B1BF /* Rich sound recorder */,
 				2967B89F2F584E090033B1BF /* Products */,
 			);

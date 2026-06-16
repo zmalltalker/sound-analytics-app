@@ -676,8 +676,7 @@ struct BundledEventDetectionService: EventDetectionServicing {
         model: DetectionModelDescriptor
     ) async throws -> [DetectionEvent] {
         if model.downloadedArchiveURL != nil {
-            let package = try DownloadedModelLoader.loadPackage(for: model)
-            return try PeakCenteredInference.recognizeEvents(in: recording, with: package)
+            return try await recognizeDownloadedEvents(in: recording, model: model)
         }
 
         guard let bundledModelName = model.bundledModelName else {
@@ -714,6 +713,23 @@ struct BundledEventDetectionService: EventDetectionServicing {
                 }
             } catch {
                 continuation.resume(throwing: error)
+            }
+        }
+    }
+
+    private func recognizeDownloadedEvents(
+        in recording: CompletedRecording,
+        model: DetectionModelDescriptor
+    ) async throws -> [DetectionEvent] {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let package = try DownloadedModelLoader.loadPackage(for: model)
+                    let events = try PeakCenteredInference.recognizeEvents(in: recording, with: package)
+                    continuation.resume(returning: events)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
             }
         }
     }
