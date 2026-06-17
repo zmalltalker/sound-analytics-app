@@ -29,19 +29,6 @@ struct DetectWorkspaceView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 if let activeProject = appContext.activeProject {
-                    ContextHeader(
-                        title: activeProject.name,
-                        subtitle: detectSubtitle(for: activeProject.uid),
-                        onSwitch: {
-                            if recorder.isRecording {
-                                showSwitchConfirmation = true
-                            } else {
-                                showProjectSwitcher = true
-                                phase = .chooser
-                            }
-                        }
-                    )
-
                     switch phase {
                     case .chooser:
                         chooserView(for: activeProject.uid)
@@ -59,9 +46,29 @@ struct DetectWorkspaceView: View {
                 }
             }
             .padding(20)
+            .padding(.top, 8)
             .padding(.bottom, 80)
         }
         .background(Color.black.ignoresSafeArea())
+        .safeAreaInset(edge: .top) {
+            if let activeProject = appContext.activeProject {
+                ContextHeader(
+                    title: activeProject.name,
+                    subtitle: detectSubtitle(for: activeProject.uid),
+                    onSwitch: {
+                        if recorder.isRecording {
+                            showSwitchConfirmation = true
+                        } else {
+                            showProjectSwitcher = true
+                            phase = .chooser
+                        }
+                    }
+                )
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .background(Color.clear)
+            }
+        }
         .task {
             await recorder.requestPermission()
         }
@@ -108,13 +115,9 @@ struct DetectWorkspaceView: View {
                         HStack(spacing: 12) {
                             Button("Open Models", action: onOpenModels)
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.black)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 10)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 14)
-                                        .fill(Color(red: 0.91, green: 0.47, blue: 0.32))
-                                )
+                                .buttonStyle(TintedActionButtonStyle(tint: Color(red: 0.91, green: 0.47, blue: 0.32)))
 
                             Button("Open Train", action: onOpenTrain)
                                 .font(.subheadline.weight(.semibold))
@@ -171,15 +174,10 @@ struct DetectWorkspaceView: View {
                     } label: {
                         Text("Start detecting")
                             .font(.headline)
-                            .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
-                            .background(
-                                RoundedRectangle(cornerRadius: 18)
-                                    .fill(Color(red: 0.91, green: 0.47, blue: 0.32))
-                            )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(TintedActionButtonStyle(tint: Color(red: 0.91, green: 0.47, blue: 0.32)))
                     .disabled(selectedVersion == nil)
                 }
             }
@@ -224,15 +222,10 @@ struct DetectWorkspaceView: View {
                 } label: {
                     Text("Stop")
                         .font(.headline)
-                        .foregroundStyle(.black)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 18)
-                                .fill(Color(red: 0.91, green: 0.47, blue: 0.32))
-                        )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(TintedActionButtonStyle(tint: Color(red: 0.91, green: 0.47, blue: 0.32)))
             }
         }
     }
@@ -262,15 +255,10 @@ struct DetectWorkspaceView: View {
                 } label: {
                     Text("Record again")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.black)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
-                        .background(
-                            Capsule()
-                                .fill(Color(red: 0.91, green: 0.47, blue: 0.32))
-                        )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(TintedActionButtonStyle(tint: Color(red: 0.91, green: 0.47, blue: 0.32)))
             }
 
             if let selectedRecording {

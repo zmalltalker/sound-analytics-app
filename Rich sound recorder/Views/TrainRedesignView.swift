@@ -51,12 +51,6 @@ struct TrainWorkspaceView: View {
                     let readyLabels = projectLabels.filter { (labelRecordingCounts[$0.uid] ?? 0) > 0 }
                     let isReady = projectLabels.count >= 2 && readyLabels.count >= 2
 
-                    ContextHeader(
-                        title: activeProject.name,
-                        subtitle: latestVersionSubtitle(for: activeProject.uid),
-                        onSwitch: { showProjectSwitcher = true }
-                    )
-
                     readinessCard(
                         for: activeProject,
                         projectLabels: projectLabels,
@@ -83,9 +77,22 @@ struct TrainWorkspaceView: View {
                 }
             }
             .padding(20)
+            .padding(.top, 8)
             .padding(.bottom, 80)
         }
         .background(Color.black.ignoresSafeArea())
+        .safeAreaInset(edge: .top) {
+            if let activeProject = appContext.activeProject {
+                ContextHeader(
+                    title: activeProject.name,
+                    subtitle: latestVersionSubtitle(for: activeProject.uid),
+                    onSwitch: { showProjectSwitcher = true }
+                )
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .background(Color.clear)
+            }
+        }
         .navigationDestination(isPresented: $showRecordingView) {
             RecordingView { recording in
                 pendingRecording = recording
@@ -168,15 +175,10 @@ struct TrainWorkspaceView: View {
                     } label: {
                         Text("Record audio")
                             .font(.headline)
-                            .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
-                            .background(
-                                RoundedRectangle(cornerRadius: 18)
-                                    .fill(Color(red: 0.91, green: 0.47, blue: 0.32))
-                            )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(TintedActionButtonStyle(tint: Color(red: 0.91, green: 0.47, blue: 0.32)))
                 }
 
                 if let trainingError = appContext.trainingError {
@@ -251,10 +253,6 @@ struct TrainWorkspaceView: View {
                     .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 18)
-                            .fill(Color.white.opacity(0.05))
-                    )
                 }
                 .buttonStyle(.plain)
                 .disabled(!isReady || appContext.isStartingTraining)
@@ -321,15 +319,10 @@ struct TrainWorkspaceView: View {
                     } label: {
                         Text("Retry")
                             .font(.headline)
-                            .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
-                            .background(
-                                RoundedRectangle(cornerRadius: 18)
-                                    .fill(Color(red: 0.91, green: 0.47, blue: 0.32))
-                            )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(TintedActionButtonStyle(tint: Color(red: 0.91, green: 0.47, blue: 0.32)))
 
                     Button("View in Models", action: onViewModels)
                         .foregroundStyle(.secondary)
@@ -378,15 +371,10 @@ struct TrainWorkspaceView: View {
                             Text("Install on this device")
                                 .font(.headline)
                         }
-                        .foregroundStyle(.black)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 18)
-                                .fill(Color(red: 0.91, green: 0.47, blue: 0.32))
-                        )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(TintedActionButtonStyle(tint: Color(red: 0.91, green: 0.47, blue: 0.32)))
 
                     Button("View in Models", action: onViewModels)
                         .foregroundStyle(.secondary)

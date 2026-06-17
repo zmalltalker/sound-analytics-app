@@ -14,12 +14,6 @@ struct ModelsWorkspaceView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 if let activeProject = appContext.activeProject {
-                    ContextHeader(
-                        title: activeProject.name,
-                        subtitle: modelSubtitle(for: activeProject.uid),
-                        onSwitch: { showProjectSwitcher = true }
-                    )
-
                     InstrumentCard {
                         VStack(alignment: .leading, spacing: 14) {
                             HStack {
@@ -69,9 +63,22 @@ struct ModelsWorkspaceView: View {
                 }
             }
             .padding(20)
+            .padding(.top, 8)
             .padding(.bottom, 80)
         }
         .background(Color.black.ignoresSafeArea())
+        .safeAreaInset(edge: .top) {
+            if let activeProject = appContext.activeProject {
+                ContextHeader(
+                    title: activeProject.name,
+                    subtitle: modelSubtitle(for: activeProject.uid),
+                    onSwitch: { showProjectSwitcher = true }
+                )
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .background(Color.clear)
+            }
+        }
         .task(id: appContext.activeProjectUID) {
             guard let activeProjectUID = appContext.activeProjectUID else { return }
             await appContext.refreshAvailableModelVersions(for: activeProjectUID, force: true)

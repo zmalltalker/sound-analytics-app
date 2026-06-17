@@ -6,43 +6,60 @@ struct ContextHeader: View {
     let onSwitch: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("WORKING IN")
+        VStack(alignment: .leading, spacing: 10) {
+            ProjectContextToast(title: title, onSwitch: onSwitch)
+
+            if let subtitle {
+                Text(subtitle)
                     .font(.caption.monospaced())
-                    .fontWeight(.semibold)
                     .foregroundStyle(.secondary)
-                    .tracking(1.6)
+                    .padding(.leading, 6)
+            }
+        }
+    }
+}
+
+struct ProjectContextToast: View {
+    let title: String
+    let onSwitch: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "folder.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(red: 0.88, green: 0.94, blue: 1.0))
 
                 Text(title)
-                    .font(.title2.weight(.bold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
-                    .lineLimit(2)
-
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                }
+                    .lineLimit(1)
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
 
-            Spacer(minLength: 12)
+            Spacer(minLength: 8)
 
             Button("Switch", action: onSwitch)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(Color.white.opacity(0.95))
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.vertical, 11)
                 .background(
                     Capsule()
-                        .fill(.ultraThinMaterial.opacity(0.8))
+                        .fill(.regularMaterial.opacity(0.75))
                 )
         }
-        .padding(20)
+        .padding(10)
         .background(
-            RoundedRectangle(cornerRadius: 24)
-                .fill(Color.white.opacity(0.05))
+            RoundedRectangle(cornerRadius: 22)
+                .fill(.ultraThinMaterial.opacity(0.88))
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22)
+                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.22), radius: 18, y: 8)
     }
 }
 
@@ -60,6 +77,20 @@ struct InstrumentCard<Content: View>: View {
                 RoundedRectangle(cornerRadius: 24)
                     .fill(Color.white.opacity(0.06))
             )
+    }
+}
+
+struct TintedActionButtonStyle: ButtonStyle {
+    let tint: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(tint)
+            .background(
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(Color.white.opacity(configuration.isPressed ? 0.09 : 0.06))
+            )
+            .opacity(configuration.isPressed ? 0.9 : 1)
     }
 }
 

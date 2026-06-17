@@ -132,25 +132,33 @@ struct MainView: View {
 }
 
 private struct AppSectionBar: View {
+    private let sections: [AppSection] = [.train, .detect, .models, .settings]
+
     @Binding var selectedSection: AppSection
     @Binding var showingHome: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
-            sectionButton(.train, title: "Train", systemImage: "waveform")
-            sectionButton(.detect, title: "Detect", systemImage: "dot.scope")
-            sectionButton(.models, title: "Models", systemImage: "square.stack.3d.up")
-            sectionButton(.settings, title: "Settings", systemImage: "gearshape")
+        HStack(spacing: 6) {
+            ForEach(sections, id: \.self) { section in
+                sectionButton(section)
+            }
         }
         .padding(8)
         .background(
             Capsule()
-                .fill(.ultraThinMaterial.opacity(0.85))
+                .fill(.ultraThinMaterial.opacity(0.9))
         )
+        .overlay(
+            Capsule()
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.2), radius: 14, y: 8)
     }
 
-    private func sectionButton(_ section: AppSection, title: String, systemImage: String) -> some View {
-        Button {
+    private func sectionButton(_ section: AppSection) -> some View {
+        let isSelected = selectedSection == section
+
+        return Button {
             if selectedSection == section, !showingHome {
                 showingHome = true
             } else {
@@ -159,20 +167,47 @@ private struct AppSectionBar: View {
             }
         } label: {
             VStack(spacing: 4) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 16, weight: .semibold))
-                Text(title)
-                    .font(.caption2.weight(.semibold))
+                Image(systemName: systemImage(for: section))
+                    .font(.body)
+                Text(title(for: section))
+                    .font(.footnote)
             }
-            .foregroundStyle(selectedSection == section ? .black : .primary)
+            .foregroundStyle(isSelected ? .black : Color.white.opacity(0.88))
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
+            .frame(height: 64)
+            .contentShape(Rectangle())
             .background(
                 Capsule()
-                    .fill(selectedSection == section ? Color.white : .clear)
+                    .fill(isSelected ? Color.white.opacity(0.92) : Color.clear)
             )
         }
         .buttonStyle(.plain)
+    }
+
+    private func title(for section: AppSection) -> String {
+        switch section {
+        case .train:
+            return "Train"
+        case .detect:
+            return "Detect"
+        case .models:
+            return "Models"
+        case .settings:
+            return "Settings"
+        }
+    }
+
+    private func systemImage(for section: AppSection) -> String {
+        switch section {
+        case .train:
+            return "waveform"
+        case .detect:
+            return "dot.scope"
+        case .models:
+            return "square.stack.3d.up"
+        case .settings:
+            return "gearshape"
+        }
     }
 }
 

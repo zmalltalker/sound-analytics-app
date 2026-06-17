@@ -18,32 +18,7 @@ struct HomeLaunchView: View {
                         .foregroundStyle(.secondary)
                         .tracking(1.6)
 
-                    if let activeProject = appContext.activeProject {
-                        HStack(alignment: .center, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(activeProject.name)
-                                    .font(.system(size: 38, weight: .bold))
-                                    .foregroundStyle(.primary)
-                                Text("Active project")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer()
-
-                            Button("Switch") {
-                                showProjectSwitcher = true
-                            }
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(
-                                Capsule()
-                                    .fill(.ultraThinMaterial.opacity(0.9))
-                            )
-                        }
-                    } else {
+                    if appContext.activeProject == nil {
                         Button {
                             onOpenProjects()
                         } label: {
@@ -116,6 +91,16 @@ struct HomeLaunchView: View {
             .padding(.horizontal, 20)
             .padding(.top, 24)
             .padding(.bottom, 32)
+        }
+        .safeAreaInset(edge: .top) {
+            if let activeProject = appContext.activeProject {
+                ProjectContextToast(title: activeProject.name) {
+                    showProjectSwitcher = true
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .background(Color.clear)
+            }
         }
     }
 
