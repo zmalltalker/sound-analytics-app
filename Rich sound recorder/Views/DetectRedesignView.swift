@@ -10,6 +10,7 @@ struct DetectWorkspaceView: View {
     let onOpenTrain: () -> Void
 
     @StateObject private var recorder = AudioRecorder()
+    @StateObject private var recordingSettingsStore = RecordingSettingsStore.shared
     @State private var phase: DetectPhase = .chooser
     @State private var selectedVersion: String?
     @State private var selectedRecording: CompletedRecording?
@@ -312,7 +313,7 @@ struct DetectWorkspaceView: View {
         detectionError = nil
         selectedRecording = nil
         recordingStartedAt = Date()
-        recorder.start(settings: AudioSettings())
+        recorder.start(settings: recordingSettingsStore.settings)
         phase = .listening
     }
 

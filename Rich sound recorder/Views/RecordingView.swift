@@ -10,8 +10,7 @@ import AVFoundation
 
 struct RecordingView: View {
     @StateObject private var recorder = AudioRecorder()
-    @State private var settings       = AudioSettings()
-    @State private var showAdvanced   = false
+    @StateObject private var settingsStore = RecordingSettingsStore.shared
     @State private var recordingStartedAt: Date?
     @Environment(\.dismiss) private var dismiss
 
@@ -25,17 +24,13 @@ struct RecordingView: View {
                 VStack(spacing: 24) {
                     spectrumSection
                     levelMeterSection
-                    if showAdvanced {
-                        advancedSection
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                    }
                     recordButton
                 }
                 .padding(.horizontal)
                 .padding(.bottom, 40)
             }
         }
-        .navigationTitle("Sound Format")
+        .navigationTitle("Record Audio")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
@@ -49,35 +44,9 @@ struct RecordingView: View {
                 .foregroundStyle(.cyan)
             }
 
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(showAdvanced ? "Simple" : "Advanced") {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        showAdvanced.toggle()
-                    }
-                }
-                .foregroundStyle(.cyan)
-            }
         }
         .preferredColorScheme(.dark)
         .task { await recorder.requestPermission() }
-    }
-
-    // MARK: - Mic Mode
-
-    private var micModeSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionLabel("Microphone Mode")
-
-            VStack(spacing: 6) {
-                ForEach(MicMode.allCases) { mode in
-                    MicModeRow(mode: mode, isSelected: settings.micMode == mode) {
-                        guard !recorder.isRecording else { return }
-                        settings.micMode = mode
-                    }
-                }
-            }
-        }
-        .padding(.top, 8)
     }
 
     // MARK: - Spectrum
@@ -119,93 +88,6 @@ struct RecordingView: View {
         }
     }
 
-    // MARK: - Advanced Settings
-
-    private var advancedSection: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Divider()
-                .background(Color.white.opacity(0.12))
-
-            sectionLabel("Advanced")
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Microphone Mode")
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-
-                VStack(spacing: 6) {
-                    ForEach(MicMode.allCases) { mode in
-                        MicModeRow(mode: mode, isSelected: settings.micMode == mode) {
-                            guard !recorder.isRecording else { return }
-                            settings.micMode = mode
-                        }
-                    }
-                }
-            }
-
-            Divider().background(Color.white.opacity(0.08))
-
-            // Sample Rate
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Sample Rate")
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-
-                Picker("Sample Rate", selection: $settings.sampleRate) {
-                    ForEach(RecordSampleRate.allCases) { rate in
-                        Text("\(rate.label)  —  \(rate.detail)").tag(rate)
-                    }
-                }
-                .pickerStyle(.wheel)
-                .frame(height: 110)
-                .clipped()
-                .disabled(recorder.isRecording)
-
-                Text("Nyquist: \(nyquistLabel) — highest reproducible frequency at this rate")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-
-            Divider().background(Color.white.opacity(0.08))
-
-            // Channels
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Channels")
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-
-                Picker("Channels", selection: $settings.channels) {
-                    ForEach(RecordChannels.allCases) { ch in
-                        Text(ch.label).tag(ch)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .disabled(recorder.isRecording)
-            }
-
-            Divider().background(Color.white.opacity(0.08))
-
-            // Encoding
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Encoding")
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-
-                Picker("Encoding", selection: $settings.encoding) {
-                    ForEach(RecordEncoding.allCases) { enc in
-                        Text(enc.rawValue).tag(enc)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .disabled(recorder.isRecording)
-
-                Text(settings.encoding.detail)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-    }
-
     // MARK: - Record Button
 
     private var recordButton: some View {
@@ -232,7 +114,7 @@ struct RecordingView: View {
                         }
                     } else {
                         recordingStartedAt = Date()
-                        recorder.start(settings: settings)
+                        recorder.start(settings: settingsStore.settings)
                     }
                 } label: {
                     ZStack {
@@ -266,7 +148,7 @@ struct RecordingView: View {
     private var statusLine: some View {
         if recorder.isRecording {
             VStack(spacing: 4) {
-                Text("Recording  ·  \(settings.micMode.rawValue)")
+                Text("Recording  ·  \(settingsStore.settings.micMode.rawValue)")
                     .font(.caption)
                     .foregroundStyle(.red)
                 Text("Tap again to finish")
@@ -319,7 +201,7 @@ struct RecordingView: View {
     }
 
     private var nyquistLabel: String {
-        let hz = settings.sampleRate.nyquist
+        let hz = settingsStore.settings.sampleRate.nyquist
         return hz >= 1_000 ? "\(Int(hz / 1_000)) kHz" : "\(Int(hz)) Hz"
     }
 
@@ -340,112 +222,6 @@ struct RecordingView: View {
         }
 
         return max(0, endDate.timeIntervalSince(fallbackStartDate))
-    }
-}
-
-struct AdvancedSettingsView: View {
-    @Binding var settings: AudioSettings
-    let isRecording: Bool
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Microphone Mode")
-                            .font(.subheadline)
-                            .foregroundStyle(.primary)
-
-                        VStack(spacing: 6) {
-                            ForEach(MicMode.allCases) { mode in
-                                MicModeRow(mode: mode, isSelected: settings.micMode == mode) {
-                                    guard !isRecording else { return }
-                                    settings.micMode = mode
-                                }
-                            }
-                        }
-                    }
-
-                    Divider().background(Color.white.opacity(0.08))
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Sample Rate")
-                            .font(.subheadline)
-                            .foregroundStyle(.primary)
-
-                        Picker("Sample Rate", selection: $settings.sampleRate) {
-                            ForEach(RecordSampleRate.allCases) { rate in
-                                Text("\(rate.label)  -  \(rate.detail)").tag(rate)
-                            }
-                        }
-                        .pickerStyle(.wheel)
-                        .frame(height: 110)
-                        .clipped()
-                        .disabled(isRecording)
-
-                        Text("Nyquist: \(nyquistLabel) - highest reproducible frequency at this rate")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-
-                    Divider().background(Color.white.opacity(0.08))
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Channels")
-                            .font(.subheadline)
-                            .foregroundStyle(.primary)
-
-                        Picker("Channels", selection: $settings.channels) {
-                            ForEach(RecordChannels.allCases) { channel in
-                                Text(channel.label).tag(channel)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .disabled(isRecording)
-                    }
-
-                    Divider().background(Color.white.opacity(0.08))
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Encoding")
-                            .font(.subheadline)
-                            .foregroundStyle(.primary)
-
-                        Picker("Encoding", selection: $settings.encoding) {
-                            ForEach(RecordEncoding.allCases) { encoding in
-                                Text(encoding.rawValue).tag(encoding)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .disabled(isRecording)
-
-                        Text(settings.encoding.detail)
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                .padding()
-            }
-        }
-        .navigationTitle("Advanced")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Done") {
-                    dismiss()
-                }
-                .foregroundStyle(.cyan)
-            }
-        }
-    }
-
-    private var nyquistLabel: String {
-        let hz = settings.sampleRate.nyquist
-        return hz >= 1_000 ? "\(Int(hz / 1_000)) kHz" : "\(Int(hz)) Hz"
     }
 }
 

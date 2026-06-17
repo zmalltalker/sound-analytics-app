@@ -166,6 +166,7 @@ struct SettingsWorkspaceView: View {
     let loginService: AuthenticationService
     @Binding var showProfileSheet: Bool
     @Binding var destination: SetupDestination?
+    @StateObject private var recordingSettingsStore = RecordingSettingsStore.shared
 
     var body: some View {
         List {
@@ -216,7 +217,11 @@ struct SettingsWorkspaceView: View {
             .listRowBackground(Color.white.opacity(0.06))
 
             Section("App") {
-                settingsRow(title: "Recording quality", detail: "Configured in recorder")
+                NavigationLink {
+                    RecordingSettingsScreen()
+                } label: {
+                    settingsRow(title: "Recording settings", detail: recordingSettingsStore.settings.summaryText)
+                }
                 settingsRow(title: "Notifications", detail: "Not in scope")
             }
             .listRowBackground(Color.white.opacity(0.06))

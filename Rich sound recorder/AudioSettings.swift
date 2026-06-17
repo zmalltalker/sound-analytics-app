@@ -3,7 +3,7 @@ import AVFoundation
 // MARK: - Microphone Mode
 
 /// Maps to the same three modes exposed in iOS Control Center for apps using the mic.
-enum MicMode: String, CaseIterable, Identifiable {
+enum MicMode: String, CaseIterable, Identifiable, Codable {
     case wideSpectrum  = "Wide Spectrum"
     case standard      = "Standard"
     case voiceIsolation = "Voice Isolation"
@@ -41,7 +41,7 @@ enum MicMode: String, CaseIterable, Identifiable {
 
 // MARK: - Sample Rate
 
-enum RecordSampleRate: Double, CaseIterable, Identifiable {
+enum RecordSampleRate: Double, CaseIterable, Identifiable, Codable {
     case hz8000  =  8_000
     case hz16000 = 16_000
     case hz22050 = 22_050
@@ -73,7 +73,7 @@ enum RecordSampleRate: Double, CaseIterable, Identifiable {
 
 // MARK: - Channels
 
-enum RecordChannels: Int, CaseIterable, Identifiable {
+enum RecordChannels: Int, CaseIterable, Identifiable, Codable {
     case mono   = 1
     case stereo = 2
 
@@ -83,7 +83,7 @@ enum RecordChannels: Int, CaseIterable, Identifiable {
 
 // MARK: - Encoding
 
-enum RecordEncoding: String, CaseIterable, Identifiable {
+enum RecordEncoding: String, CaseIterable, Identifiable, Codable {
     case pcm  = "PCM"
     case aac  = "AAC"
     case alac = "ALAC"
@@ -111,7 +111,7 @@ enum RecordEncoding: String, CaseIterable, Identifiable {
 
 // MARK: - Aggregate Settings
 
-struct AudioSettings {
+struct AudioSettings: Codable, Equatable {
     var micMode:    MicMode           = .wideSpectrum
     var sampleRate: RecordSampleRate  = .hz48000
     var channels:   RecordChannels    = .mono
@@ -131,5 +131,9 @@ struct AudioSettings {
             s[AVLinearPCMIsNonInterleaved]  = false
         }
         return s
+    }
+
+    var summaryText: String {
+        "\(micMode.rawValue) · \(sampleRate.label) · \(channels.label) · \(encoding.rawValue)"
     }
 }

@@ -9,7 +9,7 @@ struct DetectionTab: View {
     private let waveformLoader = WaveformLoader()
 
     @StateObject private var recorder = AudioRecorder()
-    @State private var settings = AudioSettings()
+    @StateObject private var settingsStore = RecordingSettingsStore.shared
     @State private var models: [DetectionModelDescriptor] = []
     @State private var selectedModelID: DetectionModelDescriptor.ID?
     @State private var currentRecording: CompletedRecording?
@@ -21,7 +21,6 @@ struct DetectionTab: View {
     @State private var isLoadingWaveform = false
     @State private var detectionError: String?
     @State private var waveformError: String?
-    @State private var showAdvancedSettings = false
     @State private var recordingStartedAt: Date?
 
     var body: some View {
@@ -57,15 +56,6 @@ struct DetectionTab: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showAdvancedSettings = true
-                    } label: {
-                        Image(systemName: "gearshape.fill")
-                            .font(.title3)
-                            .foregroundStyle(.cyan)
-                    }
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showProfileSheet = true
@@ -75,12 +65,6 @@ struct DetectionTab: View {
                             .foregroundStyle(.cyan)
                     }
                 }
-            }
-            .sheet(isPresented: $showAdvancedSettings) {
-                NavigationStack {
-                    AdvancedSettingsView(settings: $settings, isRecording: recorder.isRecording)
-                }
-                .preferredColorScheme(.dark)
             }
             .task {
                 await recorder.requestPermission()
@@ -189,7 +173,7 @@ struct DetectionTab: View {
     private var recordingPanel: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text("Recording - \(settings.micMode.rawValue)")
+                Text("Recording - \(settingsStore.settings.micMode.rawValue)")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.red)
 
@@ -327,7 +311,7 @@ struct DetectionTab: View {
         detectionError = nil
         waveformError = nil
         recordingStartedAt = Date()
-        recorder.start(settings: settings)
+        recorder.start(settings: settingsStore.settings)
     }
 
     private func finishRecordingAndRunDetection() {
@@ -381,7 +365,7 @@ struct DetectionTab: View {
     }
 
     private var nyquistLabel: String {
-        let hz = settings.sampleRate.nyquist
+        let hz = settingsStore.settings.sampleRate.nyquist
         return hz >= 1_000 ? "\(Int(hz / 1_000)) kHz" : "\(Int(hz)) Hz"
     }
 
