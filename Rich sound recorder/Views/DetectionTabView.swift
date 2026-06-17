@@ -508,7 +508,7 @@ struct DetectionTimelineCard: View {
     let duration: Double
     let events: [DetectionEvent]
 
-    private let eventColors: [Color] = [.cyan, .orange, .green, .pink, .yellow]
+    private let analysisColor = Color(red: 0.41, green: 0.80, blue: 1.0)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -548,15 +548,14 @@ struct DetectionTimelineCard: View {
                 GeometryReader { geometry in
                     ZStack(alignment: .bottomLeading) {
                         ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
-                            let color = eventColors[index % eventColors.count]
                             let xStart = xPosition(for: event.startTime, width: geometry.size.width)
                             let xEnd = xPosition(for: event.endTime, width: geometry.size.width)
 
                             RoundedRectangle(cornerRadius: 8)
-                                .fill(color.opacity(0.18))
+                                .fill(analysisColor.opacity(0.18))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8)
-                                        .stroke(color.opacity(0.55), lineWidth: 1)
+                                        .stroke(analysisColor.opacity(0.55), lineWidth: 1)
                                 )
                                 .frame(width: max(8, xEnd - xStart), height: geometry.size.height - 18)
                                 .offset(x: xStart, y: 0)
@@ -605,19 +604,19 @@ struct DetectionTimelineCard: View {
                             Spacer()
 
                             Text(confidenceText(for: event))
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(.white)
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.secondary)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 5)
                                 .background(
                                     Capsule()
-                                        .fill(Color.white.opacity(0.12))
+                                        .fill(Color.white.opacity(0.08))
                                 )
                         }
                     }
                 }
             } else {
-                Text("No classified events were returned for this clip.")
+                Text("No labeled events found.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -634,8 +633,8 @@ struct DetectionTimelineCard: View {
     }
 
     private func barColor(for time: Double) -> Color {
-        if let index = events.firstIndex(where: { time >= $0.startTime && time <= $0.endTime }) {
-            return eventColors[index % eventColors.count]
+        if events.contains(where: { time >= $0.startTime && time <= $0.endTime }) {
+            return analysisColor
         }
 
         return .white.opacity(0.75)
@@ -660,11 +659,9 @@ struct DetectionTimelineCard: View {
     }
 
     private func markerBadge(_ index: Int) -> some View {
-        let color = eventColors[index % eventColors.count]
-
         return ZStack {
             Circle()
-                .fill(color)
+                .fill(analysisColor)
                 .frame(width: 22, height: 22)
 
             Text("\(index + 1)")
