@@ -302,6 +302,9 @@ struct DetectWorkspaceView: View {
         selectedRecording = nil
         recordingStartedAt = Date()
         recorder.start(settings: recordingSettingsStore.settings)
+        if recorder.isRecording {
+            AppHaptics.stepTick()
+        }
         phase = .listening
     }
 

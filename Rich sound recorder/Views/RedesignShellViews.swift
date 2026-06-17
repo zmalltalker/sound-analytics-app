@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ContextHeader: View {
     let title: String
@@ -94,6 +95,59 @@ struct TintedActionButtonStyle: ButtonStyle {
     }
 }
 
+struct SuccessToast: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(Color(red: 0.41, green: 0.80, blue: 1.0))
+                .symbolEffect(.bounce, options: .nonRepeating)
+
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(
+            Capsule()
+                .fill(.regularMaterial.opacity(0.92))
+        )
+        .overlay(
+            Capsule()
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.22), radius: 18, y: 8)
+    }
+}
+
+enum AppHaptics {
+    @MainActor private static let stepGenerator = UISelectionFeedbackGenerator()
+    @MainActor private static let successGenerator = UINotificationFeedbackGenerator()
+    @MainActor private static let errorGenerator = UINotificationFeedbackGenerator()
+
+    @MainActor
+    static func stepTick() {
+        stepGenerator.prepare()
+        stepGenerator.selectionChanged()
+    }
+
+    @MainActor
+    static func success() {
+        successGenerator.prepare()
+        successGenerator.notificationOccurred(.success)
+    }
+
+    @MainActor
+    static func failure() {
+        errorGenerator.prepare()
+        errorGenerator.notificationOccurred(.error)
+    }
+}
+
 struct ProjectSwitcherSheet: View {
     @Environment(RedesignAppContext.self) private var appContext
     @Environment(\.dismiss) private var dismiss
@@ -107,6 +161,9 @@ struct ProjectSwitcherSheet: View {
                     Button {
                         Task {
                             await appContext.setActiveProject(project.uid)
+                            await MainActor.run {
+                                AppHaptics.success()
+                            }
                             dismiss()
                         }
                     } label: {

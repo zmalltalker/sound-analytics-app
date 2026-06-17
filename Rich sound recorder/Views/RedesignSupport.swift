@@ -349,8 +349,8 @@ final class RedesignAppContext {
         trainingPollTask = Task { [weak self] in
             guard let self else { return }
 
-            for _ in 0..<60 {
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            for _ in 0..<150 {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
                 if Task.isCancelled { return }
 
                 await self.refreshTrainingStatus()

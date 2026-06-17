@@ -14,7 +14,16 @@ struct RecordingView: View {
     @State private var recordingStartedAt: Date?
     @Environment(\.dismiss) private var dismiss
 
+    let preStartMessage: String?
     let onComplete: (CompletedRecording) -> Void
+
+    init(
+        preStartMessage: String? = nil,
+        onComplete: @escaping (CompletedRecording) -> Void
+    ) {
+        self.preStartMessage = preStartMessage
+        self.onComplete = onComplete
+    }
 
     var body: some View {
         ZStack {
@@ -115,6 +124,9 @@ struct RecordingView: View {
                     } else {
                         recordingStartedAt = Date()
                         recorder.start(settings: settingsStore.settings)
+                        if recorder.isRecording {
+                            AppHaptics.stepTick()
+                        }
                     }
                 } label: {
                     ZStack {
@@ -155,6 +167,12 @@ struct RecordingView: View {
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
+        } else if let preStartMessage {
+            Text(preStartMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
         } else if let url = recorder.lastRecordingURL {
             Text("Saved: \(url.lastPathComponent)")
                 .font(.caption2)

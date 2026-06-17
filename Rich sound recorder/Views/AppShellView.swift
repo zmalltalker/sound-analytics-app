@@ -159,12 +159,8 @@ private struct AppSectionBar: View {
         let isSelected = selectedSection == section
 
         return Button {
-            if selectedSection == section, !showingHome {
-                showingHome = true
-            } else {
-                selectedSection = section
-                showingHome = false
-            }
+            selectedSection = section
+            showingHome = false
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: systemImage(for: section))

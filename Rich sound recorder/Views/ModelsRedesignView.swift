@@ -9,6 +9,8 @@ struct ModelsWorkspaceView: View {
     @State private var isInstallingVersion: String?
     @State private var errorMessage: String?
     @State private var pendingRemoval: ProjectModelRowState?
+    @State private var installSuccessMessage: String?
+    @State private var installSuccessToken = 0
 
     var body: some View {
         ScrollView {
@@ -92,6 +94,18 @@ struct ModelsWorkspaceView: View {
             }
         } message: {
             Text(removalMessage)
+        }
+        .overlay(alignment: .bottom) {
+            if let installSuccessMessage {
+                SuccessToast(title: installSuccessMessage)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 96)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .onChange(of: installSuccessToken) { _, newValue in
+            guard newValue > 0 else { return }
+            AppHaptics.success()
         }
     }
 
@@ -203,10 +217,26 @@ struct ModelsWorkspaceView: View {
         Task {
             do {
                 try await appContext.installModel(projectUID: projectUID, version: version)
+                await MainActor.run {
+                    withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) {
+                        installSuccessMessage = "Version \(version) installed on this device"
+                    }
+                    installSuccessToken += 1
+                }
+                try? await Task.sleep(nanoseconds: 1_800_000_000)
+                await MainActor.run {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        installSuccessMessage = nil
+                    }
+                }
             } catch {
-                errorMessage = error.localizedDescription
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                }
             }
-            isInstallingVersion = nil
+            await MainActor.run {
+                isInstallingVersion = nil
+            }
         }
     }
 

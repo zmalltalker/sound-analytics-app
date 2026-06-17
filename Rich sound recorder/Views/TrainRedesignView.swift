@@ -25,6 +25,13 @@ struct TrainWorkspaceView: View {
     @State private var isUploading = false
     @State private var installError: String?
     @State private var isInstallingLatest = false
+    @State private var installSuccessMessage: String?
+    @State private var installSuccessToken = 0
+    @State private var displayedTrainingStepIndex = 0
+    @State private var isHoldingCompletedTrainingState = false
+    @State private var trainingStepTask: Task<Void, Never>?
+    @State private var stagedTrainingRequestUID: String?
+    @State private var failedTrainingHapticRequestUID: String?
 
     init(
         loginService: AuthenticationService,
@@ -60,7 +67,8 @@ struct TrainWorkspaceView: View {
 
                     modelVersionsCard(for: activeProject, isReady: isReady)
 
-                    if appContext.trainingProjectUID == activeProject.uid, appContext.isTrainingInProgress {
+                    if appContext.trainingProjectUID == activeProject.uid,
+                       (appContext.isTrainingInProgress || isHoldingCompletedTrainingState) {
                         trainingProgressCard
                     } else if appContext.trainingProjectUID == activeProject.uid, trainingDidFail {
                         trainingFailureCard(for: activeProject)
@@ -94,7 +102,9 @@ struct TrainWorkspaceView: View {
             }
         }
         .navigationDestination(isPresented: $showRecordingView) {
-            RecordingView { recording in
+            RecordingView(
+                preStartMessage: "Tap the record button once you're ready to start training."
+            ) { recording in
                 pendingRecording = recording
                 showUploadSheet = true
                 loadLabelsForUpload()
@@ -126,6 +136,27 @@ struct TrainWorkspaceView: View {
             if let latestVersion = appContext.latestKnownVersion(for: activeProject.uid) {
                 _ = try? await appContext.modelSpecs(projectUID: activeProject.uid, version: latestVersion)
             }
+        }
+        .task(id: appContext.trainingRequestUID) {
+            stageTrainingSequenceIfNeeded()
+        }
+        .task(id: appContext.trainingStatus ?? "") {
+            reactToTrainingStatus()
+        }
+        .onDisappear {
+            trainingStepTask?.cancel()
+        }
+        .overlay(alignment: .bottom) {
+            if let installSuccessMessage {
+                SuccessToast(title: installSuccessMessage)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 96)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .onChange(of: installSuccessToken) { _, newValue in
+            guard newValue > 0 else { return }
+            AppHaptics.success()
         }
     }
 
@@ -275,8 +306,8 @@ struct TrainWorkspaceView: View {
 
                 ForEach(trainingSteps, id: \.self) { step in
                     HStack(spacing: 12) {
-                        Image(systemName: currentTrainingStep == step ? "record.circle.fill" : "circle")
-                            .foregroundStyle(Color(red: 0.91, green: 0.47, blue: 0.32))
+                        Image(systemName: symbolName(for: step))
+                            .foregroundStyle(symbolColor(for: step))
                         Text(step)
                             .foregroundStyle(.primary)
                     }
@@ -477,13 +508,20 @@ struct TrainWorkspaceView: View {
         Task {
             do {
                 try await recordingRepository.uploadRecording(recording: pendingRecording, labelUID: selectedLabelUID)
-                labelRecordingCounts[selectedLabelUID, default: 0] += 1
-                showUploadSheet = false
-                self.pendingRecording = nil
+                await MainActor.run {
+                    labelRecordingCounts[selectedLabelUID, default: 0] += 1
+                    showUploadSheet = false
+                    self.pendingRecording = nil
+                    AppHaptics.success()
+                }
             } catch {
-                labelLoadingError = error.localizedDescription
+                await MainActor.run {
+                    labelLoadingError = error.localizedDescription
+                }
             }
-            isUploading = false
+            await MainActor.run {
+                isUploading = false
+            }
         }
     }
 
@@ -494,10 +532,26 @@ struct TrainWorkspaceView: View {
         Task {
             do {
                 try await appContext.installModel(projectUID: projectUID, version: version)
+                await MainActor.run {
+                    withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) {
+                        installSuccessMessage = "Model installed on this device"
+                    }
+                    installSuccessToken += 1
+                }
+                try? await Task.sleep(nanoseconds: 1_800_000_000)
+                await MainActor.run {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        installSuccessMessage = nil
+                    }
+                }
             } catch {
-                installError = error.localizedDescription
+                await MainActor.run {
+                    installError = error.localizedDescription
+                }
             }
-            isInstallingLatest = false
+            await MainActor.run {
+                isInstallingLatest = false
+            }
         }
     }
 
@@ -510,12 +564,7 @@ struct TrainWorkspaceView: View {
     }
 
     private var currentTrainingStep: String {
-        let normalized = appContext.trainingStatus?.lowercased() ?? ""
-        if normalized.contains("upload") { return trainingSteps[0] }
-        if normalized.contains("pre") { return trainingSteps[1] }
-        if normalized.contains("train") { return trainingSteps[2] }
-        if normalized.contains("pack") || normalized.contains("complete") { return trainingSteps[3] }
-        return trainingSteps[0]
+        trainingSteps[displayedTrainingStepIndex]
     }
 
     private var trainingProgressValue: Double {
@@ -529,6 +578,108 @@ struct TrainWorkspaceView: View {
     private var trainingDidFail: Bool {
         let normalized = appContext.trainingStatus?.lowercased() ?? ""
         return normalized.contains("fail") || normalized.contains("error")
+    }
+
+    private func stageTrainingSequenceIfNeeded() {
+        trainingStepTask?.cancel()
+
+        guard let requestUID = appContext.trainingRequestUID else {
+            displayedTrainingStepIndex = 0
+            isHoldingCompletedTrainingState = false
+            stagedTrainingRequestUID = nil
+            failedTrainingHapticRequestUID = nil
+            return
+        }
+
+        guard stagedTrainingRequestUID != requestUID else {
+            return
+        }
+
+        stagedTrainingRequestUID = requestUID
+        displayedTrainingStepIndex = 0
+        isHoldingCompletedTrainingState = true
+
+        trainingStepTask = Task {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard stagedTrainingRequestUID == requestUID else { return }
+                displayedTrainingStepIndex = 1
+                AppHaptics.stepTick()
+            }
+
+            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard stagedTrainingRequestUID == requestUID else { return }
+                displayedTrainingStepIndex = 2
+                AppHaptics.stepTick()
+            }
+        }
+    }
+
+    private func reactToTrainingStatus() {
+        if trainingDidFail {
+            if failedTrainingHapticRequestUID != appContext.trainingRequestUID {
+                failedTrainingHapticRequestUID = appContext.trainingRequestUID
+                AppHaptics.failure()
+            }
+            isHoldingCompletedTrainingState = false
+            return
+        }
+
+        guard let completedRequestUID = appContext.trainingRequestUID else {
+            isHoldingCompletedTrainingState = false
+            return
+        }
+
+        guard !appContext.isTrainingInProgress else {
+            isHoldingCompletedTrainingState = true
+            return
+        }
+
+        trainingStepTask?.cancel()
+        trainingStepTask = Task {
+            while !Task.isCancelled {
+                let currentIndex = await MainActor.run { displayedTrainingStepIndex }
+                if currentIndex >= 2 { break }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard stagedTrainingRequestUID == completedRequestUID else { return }
+                displayedTrainingStepIndex = 3
+                isHoldingCompletedTrainingState = true
+                AppHaptics.stepTick()
+            }
+
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard stagedTrainingRequestUID == completedRequestUID else { return }
+                isHoldingCompletedTrainingState = false
+            }
+        }
+    }
+
+    private func symbolName(for step: String) -> String {
+        let index = trainingSteps.firstIndex(of: step) ?? 0
+        if index < displayedTrainingStepIndex {
+            return "checkmark.circle.fill"
+        }
+        if index == displayedTrainingStepIndex {
+            return "record.circle.fill"
+        }
+        return "circle"
+    }
+
+    private func symbolColor(for step: String) -> Color {
+        let index = trainingSteps.firstIndex(of: step) ?? 0
+        if index < displayedTrainingStepIndex {
+            return Color(red: 0.41, green: 0.80, blue: 1.0)
+        }
+        return Color(red: 0.91, green: 0.47, blue: 0.32)
     }
 
     private func readinessBadge(isReady: Bool) -> some View {
