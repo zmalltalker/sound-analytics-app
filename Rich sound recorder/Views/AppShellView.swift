@@ -23,14 +23,13 @@ struct MainView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
-                Color.black.ignoresSafeArea()
+                RSR.canvas.ignoresSafeArea()
 
                 activeSectionView
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 AppSectionBar(selectedSection: $selectedSection)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
+                .padding(.bottom, 8)
             }
             .navigationDestination(item: $setupDestination) { destination in
                 switch destination {
@@ -62,7 +61,6 @@ struct MainView: View {
             }
         }
         .environment(appContext)
-        .preferredColorScheme(.dark)
     }
 
     @ViewBuilder
@@ -112,76 +110,31 @@ struct MainView: View {
 }
 
 private struct AppSectionBar: View {
-    private let sections: [AppSection] = [.train, .detect, .models, .settings]
-
     @Binding var selectedSection: AppSection
 
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(sections, id: \.self) { section in
-                sectionButton(section)
+        RSRTabBar(tabs: RSRTabBar.standardTabs, selection: selectionIndex)
+    }
+
+    private var selectionIndex: Binding<Int> {
+        Binding(
+            get: {
+                switch selectedSection {
+                case .train: return 0
+                case .detect: return 1
+                case .models: return 2
+                case .settings: return 3
+                }
+            },
+            set: { newValue in
+                switch newValue {
+                case 0: selectedSection = .train
+                case 1: selectedSection = .detect
+                case 2: selectedSection = .models
+                default: selectedSection = .settings
+                }
             }
-        }
-        .padding(8)
-        .background(
-            Capsule()
-                .fill(.ultraThinMaterial.opacity(0.9))
         )
-        .overlay(
-            Capsule()
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.2), radius: 14, y: 8)
-    }
-
-    private func sectionButton(_ section: AppSection) -> some View {
-        let isSelected = selectedSection == section
-
-        return Button {
-            selectedSection = section
-        } label: {
-            VStack(spacing: 4) {
-                Image(systemName: systemImage(for: section))
-                    .font(.body)
-                Text(title(for: section))
-                    .font(.footnote)
-            }
-            .foregroundStyle(isSelected ? .black : Color.white.opacity(0.88))
-            .frame(maxWidth: .infinity)
-            .frame(height: 64)
-            .contentShape(Rectangle())
-            .background(
-                Capsule()
-                    .fill(isSelected ? Color.white.opacity(0.92) : Color.clear)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func title(for section: AppSection) -> String {
-        switch section {
-        case .train:
-            return "Train"
-        case .detect:
-            return "Detect"
-        case .models:
-            return "Models"
-        case .settings:
-            return "Settings"
-        }
-    }
-
-    private func systemImage(for section: AppSection) -> String {
-        switch section {
-        case .train:
-            return "waveform"
-        case .detect:
-            return "dot.scope"
-        case .models:
-            return "square.stack.3d.up"
-        case .settings:
-            return "gearshape"
-        }
     }
 }
 

@@ -53,7 +53,6 @@ struct RecordingView: View {
                 .padding(.bottom, 28)
             }
         }
-        .preferredColorScheme(.dark)
         .toolbar(.hidden, for: .navigationBar)
         .statusBarHidden(false)
         .task {
@@ -73,19 +72,12 @@ struct RecordingView: View {
 
     private var immersiveBackground: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.03, green: 0.05, blue: 0.09),
-                    Color.black
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            RSR.canvas
 
             RadialGradient(
                 colors: [
-                    Color(red: 0.05, green: 0.14, blue: 0.27).opacity(0.9),
-                    Color(red: 0.03, green: 0.07, blue: 0.12).opacity(0.5),
+                    RSR.accent.opacity(0.18),
+                    RSR.accent.opacity(0.08),
                     .clear
                 ],
                 center: .center,
@@ -102,18 +94,18 @@ struct RecordingView: View {
             Button("Cancel") {
                 cancelAndDismiss()
             }
-            .font(.title3.weight(.semibold))
-            .foregroundStyle(Color(red: 0.15, green: 0.52, blue: 0.98))
+            .font(.rsrHeadline)
+            .foregroundStyle(RSR.accent)
 
             Spacer()
 
             Text(projectName ?? "Training")
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(Color.white.opacity(0.55))
+                .font(.rsrBody.weight(.semibold))
+                .foregroundStyle(RSR.labelSecondary)
                 .lineLimit(1)
                 .multilineTextAlignment(.trailing)
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, RSRSpace.screen)
         .padding(.top, 14)
     }
 
@@ -122,36 +114,37 @@ struct RecordingView: View {
             ZStack {
                 if recorder.isRecording {
                     Circle()
-                        .fill(Color.red.opacity(0.18))
+                        .fill(RSR.danger.opacity(0.18))
                         .frame(width: 34, height: 34)
                         .scaleEffect(shouldPulseIndicator ? 1.2 : 0.9)
                         .opacity(shouldPulseIndicator ? 0.95 : 0.45)
 
                     Circle()
-                        .fill(Color(red: 1.0, green: 0.32, blue: 0.26))
+                        .fill(RSR.danger)
                         .frame(width: 18, height: 18)
-                        .shadow(color: Color.red.opacity(0.55), radius: 10)
+                        .shadow(color: RSR.danger.opacity(0.45), radius: 10)
                         .matchedGeometryEffect(id: "recording-indicator", in: recordingIndicatorNamespace)
                 } else {
                     Circle()
-                        .fill(Color.white.opacity(0.25))
+                        .fill(RSR.labelTertiary)
                         .frame(width: 16, height: 16)
                 }
             }
 
             Text(recorder.isRecording ? "RECORDING" : "READY")
-                .font(.headline.weight(.bold))
-                .tracking(0.8)
-                .foregroundStyle(Color.white.opacity(0.55))
+                .font(.rsrCaption)
+                .tracking(RSRTracking.eyebrow)
+                .foregroundStyle(recorder.isRecording ? RSR.labelSecondary : RSR.labelTertiary)
         }
     }
 
     private var timerText: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             Text(formattedElapsedTime(referenceDate: context.date))
-                .font(.system(size: 90, weight: .ultraLight, design: .rounded))
+                .font(.rsrDisplay)
+                .tracking(RSRTracking.display)
                 .monospacedDigit()
-                .foregroundStyle(.white)
+                .foregroundStyle(RSR.labelPrimary)
                 .contentTransition(.numericText())
         }
     }
@@ -160,10 +153,10 @@ struct RecordingView: View {
         SpectrumView(
             bands: recorder.frequencyBands,
             style: .mirroredBars,
-            tint: Color(red: 0.11, green: 0.53, blue: 0.98)
+            tint: RSR.accent
         )
         .frame(height: 290)
-        .padding(.horizontal, 22)
+        .padding(.horizontal, RSRSpace.screen)
         .opacity(recorder.permissionDenied ? 0.25 : 1)
         .overlay {
             if recorder.permissionDenied {
@@ -171,15 +164,12 @@ struct RecordingView: View {
                     .padding(.horizontal, 30)
             } else if let errorMessage = recorder.errorMessage {
                 Text(errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.red.opacity(0.9))
+                    .font(.rsrSubhead)
+                    .foregroundStyle(RSR.danger)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 34)
                     .padding(.vertical, 12)
-                    .background(
-                        Capsule()
-                            .fill(Color.white.opacity(0.06))
-                    )
+                    .rsrGlass(.thin, radius: RSRRadius.control)
             }
         }
     }
@@ -192,17 +182,18 @@ struct RecordingView: View {
             } label: {
                 ZStack {
                     Circle()
-                        .fill(Color.white.opacity(0.08))
+                        .fill(RSR.surfaceGlassStrong)
                         .frame(width: 74, height: 74)
                         .overlay(
                             Circle()
-                                .stroke(Color.white.opacity(0.12), lineWidth: 2)
+                                .stroke(RSR.glassBorder, lineWidth: 1)
                         )
+                        .rsrShadow(.card)
 
                     RoundedRectangle(cornerRadius: 18)
-                        .fill(Color(red: 1.0, green: 0.32, blue: 0.26))
+                        .fill(RSR.danger)
                         .frame(width: 31, height: 31)
-                        .shadow(color: Color.red.opacity(0.35), radius: 18)
+                        .shadow(color: RSR.danger.opacity(0.35), radius: 18)
                 }
             }
             .buttonStyle(.plain)
@@ -212,26 +203,19 @@ struct RecordingView: View {
             } label: {
                 HStack(spacing: 14) {
                     Circle()
-                        .fill(Color(red: 1.0, green: 0.32, blue: 0.26))
+                        .fill(RSR.danger)
                         .frame(width: 18, height: 18)
-                        .shadow(color: Color.red.opacity(0.45), radius: 10)
+                        .shadow(color: RSR.danger.opacity(0.45), radius: 10)
                         .matchedGeometryEffect(id: "recording-indicator", in: recordingIndicatorNamespace)
 
                     Text("Start recording")
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .font(.rsrHeadline)
+                        .foregroundStyle(RSR.labelPrimary)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, 24)
                 .padding(.vertical, 18)
-                .background(
-                    RoundedRectangle(cornerRadius: 24)
-                        .fill(Color.white.opacity(0.12))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
+                .rsrGlass(.regular, radius: RSRRadius.card, fill: RSR.surfaceGlassStrong, elevation: .card)
             }
             .buttonStyle(.plain)
             .disabled(recorder.permissionDenied)
@@ -241,14 +225,14 @@ struct RecordingView: View {
     private var bottomInstruction: some View {
         VStack(spacing: 8) {
             Text(instructionText)
-                .font(.body.weight(.medium))
-                .foregroundStyle(Color.white.opacity(0.5))
+                .font(.rsrBody)
+                .foregroundStyle(RSR.labelSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
 
             Text(settingsStore.settings.summaryText)
-                .font(.caption.monospaced())
-                .foregroundStyle(Color.white.opacity(0.25))
+                .font(.rsrMeta)
+                .foregroundStyle(RSR.labelTertiary)
         }
     }
 
@@ -263,20 +247,23 @@ struct RecordingView: View {
         VStack(spacing: 12) {
             Image(systemName: "mic.slash.fill")
                 .font(.system(size: 34, weight: .semibold))
-                .foregroundStyle(.orange)
+                .foregroundStyle(RSR.warning)
 
             Text("Microphone access is required.")
-                .font(.headline)
-                .foregroundStyle(.white)
+                .font(.rsrHeadline)
+                .foregroundStyle(RSR.labelPrimary)
 
             Button("Open Settings") {
                 if let url = URL(string: "app-settings:") {
                     UIApplication.shared.open(url)
                 }
             }
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(Color(red: 0.15, green: 0.52, blue: 0.98))
+            .font(.rsrSubhead.weight(.semibold))
+            .foregroundStyle(RSR.accent)
         }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 18)
+        .rsrGlass(.regular, radius: RSRRadius.card, fill: RSR.surfaceGlassStrong, elevation: .card)
     }
 
     private func startRecording() {
@@ -494,8 +481,12 @@ struct SpectrumView: View {
     }
 }
 
-#Preview {
-    RecordingView(projectName: "Compressor Line A") { recording in
-        print("Recording completed: \(recording.fileURL)")
+#if DEBUG
+struct RecordingView_Previews: PreviewProvider {
+    static var previews: some View {
+        RecordingView(projectName: "Compressor Line A") { recording in
+            print("Recording completed: \(recording.fileURL)")
+        }
     }
 }
+#endif

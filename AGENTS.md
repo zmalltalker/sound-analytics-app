@@ -79,6 +79,27 @@ RecordingView { audioFileURL in
 - Permissions requested automatically on first use
 - Hardware determines actual channel count (typically stereo)
 
+## Design System
+
+- The design system source material lives in `Design system/`. Start with `Rich Sound Recorder - Design System.html`, then use the SwiftUI reference files in the same folder for implementation details.
+- The app consumes a local runtime copy under `Rich sound recorder/DesignSystem/`. When implementing product UI, work against that in-app folder rather than importing directly from the design handoff folder.
+- Prefer semantic tokens over raw styling values:
+  - Colors: `RSR.*`
+  - Typography: `Font.rsr*` and `RSRTracking.*`
+  - Spacing and radii: `RSRSpace.*`, `RSRRadius.*`
+  - Glass/elevation: `.rsrGlass(...)`, `.rsrShadow(...)`
+- Prefer reusable widgets before composing custom UI:
+  - Buttons: `RSRPrimaryButton`, `RSRSecondaryButton`, `RSRTonalButton`
+  - Surfaces: `RSRCard`
+  - Project affordances: `RSRProjectSelector`, `RSRProjectChip`, `RSRGlyphTile`
+  - Data rows: `RSRLabelRow`, `RSREventCard`, `RSRListRow`
+  - Audio visuals: `RSRWaveform`, `RSRMeter`
+  - Navigation: `RSRTabBar`
+- New UI work should support both light and dark mode. Do not hardcode `.preferredColorScheme(.dark)` in production views unless the product explicitly requires a locked appearance.
+- Avoid raw hex colors, ad-hoc gradients, or `.system(...)` typography in feature views unless the design system does not yet provide a suitable semantic token or component.
+- If a pattern repeats across screens, add or extend a semantic component in `Rich sound recorder/DesignSystem/` rather than duplicating styling inline.
+- `Rich sound recorder/Views/DesignSystemShowcaseView.swift` is the static showcase screen for previewing tokens and widgets in Xcode. Keep it representative and safe to render with static content.
+
 ---
 
 ## API

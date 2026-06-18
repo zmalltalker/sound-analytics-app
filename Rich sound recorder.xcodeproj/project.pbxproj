@@ -14,6 +14,16 @@
 		2955F0172FE1710E001CA4AF /* Resonyx redesign spec.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "Resonyx redesign spec.md"; sourceTree = "<group>"; };
 		2955F0192FE17116001CA4AF /* Wireframes.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = Wireframes.pdf; sourceTree = "<group>"; };
 		2967B89E2F584E090033B1BF /* Resonyx mobile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Resonyx mobile.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		29919A282FE43E51007458E8 /* Colors.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Colors.xcassets; sourceTree = "<group>"; };
+		29919A292FE43E51007458E8 /* DetectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetectView.swift; sourceTree = "<group>"; };
+		29919A2A2FE43E51007458E8 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		29919A2B2FE43E51007458E8 /* RSRColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RSRColor.swift; sourceTree = "<group>"; };
+		29919A2C2FE43E51007458E8 /* RSRColor+Assets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RSRColor+Assets.swift"; sourceTree = "<group>"; };
+		29919A2D2FE43E51007458E8 /* RSRComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RSRComponents.swift; sourceTree = "<group>"; };
+		29919A2E2FE43E51007458E8 /* RSRSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RSRSurface.swift; sourceTree = "<group>"; };
+		29919A2F2FE43E51007458E8 /* RSRTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RSRTheme.swift; sourceTree = "<group>"; };
+		29919A302FE43E51007458E8 /* RSRTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RSRTypography.swift; sourceTree = "<group>"; };
+		29919A322FE43EF1007458E8 /* Rich Sound Recorder - Design System.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = "Rich Sound Recorder - Design System.html"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -43,6 +53,7 @@
 				2955F0192FE17116001CA4AF /* Wireframes.pdf */,
 				2967B8A02F584E090033B1BF /* Rich sound recorder */,
 				2967B89F2F584E090033B1BF /* Products */,
+				29919A312FE43E51007458E8 /* Design system */,
 			);
 			sourceTree = "<group>";
 		};
@@ -52,6 +63,23 @@
 				2967B89E2F584E090033B1BF /* Resonyx mobile.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		29919A312FE43E51007458E8 /* Design system */ = {
+			isa = PBXGroup;
+			children = (
+				29919A282FE43E51007458E8 /* Colors.xcassets */,
+				29919A292FE43E51007458E8 /* DetectView.swift */,
+				29919A2A2FE43E51007458E8 /* README.md */,
+				29919A2B2FE43E51007458E8 /* RSRColor.swift */,
+				29919A2C2FE43E51007458E8 /* RSRColor+Assets.swift */,
+				29919A2D2FE43E51007458E8 /* RSRComponents.swift */,
+				29919A2E2FE43E51007458E8 /* RSRSurface.swift */,
+				29919A2F2FE43E51007458E8 /* RSRTheme.swift */,
+				29919A302FE43E51007458E8 /* RSRTypography.swift */,
+				29919A322FE43EF1007458E8 /* Rich Sound Recorder - Design System.html */,
+			);
+			path = "Design system";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */

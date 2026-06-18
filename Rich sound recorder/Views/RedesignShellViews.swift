@@ -156,62 +156,65 @@ struct ProjectSwitcherSheet: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(appContext.projects) { project in
-                    Button {
-                        Task {
-                            await appContext.setActiveProject(project.uid)
-                            await MainActor.run {
-                                AppHaptics.success()
-                            }
-                            dismiss()
-                        }
-                    } label: {
-                        HStack(spacing: 14) {
-                            Image(systemName: appContext.activeProjectUID == project.uid ? "largecircle.fill.circle" : "circle")
-                                .foregroundStyle(appContext.activeProjectUID == project.uid ? Color(red: 0.41, green: 0.80, blue: 1.0) : .secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: RSRSpace.md) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Select project")
+                            .font(.rsrTitle)
+                            .tracking(RSRTracking.title)
+                            .foregroundStyle(RSR.labelPrimary)
 
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(project.name)
-                                    .font(.body.weight(.semibold))
-                                    .foregroundStyle(.primary)
-
-                                Text(projectMetadata(for: project))
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer()
-                        }
-                        .padding(.vertical, 6)
+                        Text("Training, detection, and models all follow the active project.")
+                            .font(.rsrSubhead)
+                            .foregroundStyle(RSR.labelSecondary)
                     }
-                    .buttonStyle(.plain)
-                    .listRowBackground(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(appContext.activeProjectUID == project.uid ? Color(red: 0.41, green: 0.80, blue: 1.0).opacity(0.12) : Color.white.opacity(0.06))
-                    )
-                }
 
-                Button {
-                    dismiss()
-                    onCreateProject()
-                } label: {
-                    Label("+ New project", systemImage: "plus")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .padding(.vertical, 6)
+                    if appContext.projects.isEmpty {
+                        RSRCard {
+                            VStack(alignment: .leading, spacing: RSRSpace.sm) {
+                                Text("No projects yet")
+                                    .font(.rsrBody.weight(.semibold))
+                                    .foregroundStyle(RSR.labelPrimary)
+
+                                Text("Create a project to start collecting audio and training models.")
+                                    .font(.rsrSubhead)
+                                    .foregroundStyle(RSR.labelSecondary)
+                            }
+                        }
+                    } else {
+                        VStack(spacing: RSRSpace.sm) {
+                            ForEach(appContext.projects) { project in
+                                ProjectSwitcherRow(
+                                    project: project,
+                                    metadata: projectMetadata(for: project),
+                                    isSelected: appContext.activeProjectUID == project.uid
+                                ) {
+                                    Task {
+                                        await appContext.setActiveProject(project.uid)
+                                        await MainActor.run {
+                                            AppHaptics.success()
+                                        }
+                                        dismiss()
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    RSRSecondaryButton(title: "New project") {
+                        dismiss()
+                        onCreateProject()
+                    }
                 }
-                .buttonStyle(.plain)
-                .listRowBackground(Color.white.opacity(0.06))
             }
-            .scrollContentBackground(.hidden)
-            .background(Color.black.ignoresSafeArea())
+            .padding(.horizontal, RSRSpace.screen)
+            .padding(.top, RSRSpace.md)
+            .padding(.bottom, RSRSpace.lg)
+            .background(RSR.canvas.ignoresSafeArea())
             .navigationTitle("Switch Project")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
             .presentationDetents([.medium, .large])
         }
-        .preferredColorScheme(.dark)
     }
 
     private func projectMetadata(for project: Project) -> String {
@@ -233,6 +236,49 @@ struct ProjectSwitcherSheet: View {
     }
 }
 
+private struct ProjectSwitcherRow: View {
+    let project: Project
+    let metadata: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                RSRGlyphTile(size: 40)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(project.name)
+                        .font(.rsrBody.weight(.semibold))
+                        .foregroundStyle(RSR.labelPrimary)
+                        .lineLimit(1)
+
+                    Text(metadata)
+                        .font(.rsrSubhead)
+                        .foregroundStyle(RSR.labelSecondary)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 12)
+
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(isSelected ? RSR.accent : RSR.labelTertiary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .rsrGlass(
+                .regular,
+                radius: RSRRadius.control,
+                fill: isSelected ? RSR.accentTint : RSR.surfaceGlass,
+                elevation: .card
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct DetectModelSelectorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -245,9 +291,9 @@ struct DetectModelSelectorSheet: View {
             List {
                 if models.isEmpty {
                     Text("No on-device models available for this project.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .listRowBackground(Color.white.opacity(0.06))
+                        .font(.rsrSubhead)
+                        .foregroundStyle(RSR.labelSecondary)
+                        .listRowBackground(RSR.surfaceGlass)
                 } else {
                     ForEach(models) { model in
                         Button {
@@ -256,16 +302,16 @@ struct DetectModelSelectorSheet: View {
                         } label: {
                             HStack(spacing: 14) {
                                 Image(systemName: selectedVersion == model.version ? "largecircle.fill.circle" : "circle")
-                                    .foregroundStyle(selectedVersion == model.version ? Color(red: 0.41, green: 0.80, blue: 1.0) : .secondary)
+                                    .foregroundStyle(selectedVersion == model.version ? RSR.accent : RSR.labelSecondary)
 
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text("Model v\(model.version)")
-                                        .font(.body.weight(.semibold))
-                                        .foregroundStyle(.primary)
+                                        .font(.rsrBody.weight(.semibold))
+                                        .foregroundStyle(RSR.labelPrimary)
 
                                     Text(modelMetadata(for: model))
-                                        .font(.caption.monospaced())
-                                        .foregroundStyle(.secondary)
+                                        .font(.rsrMeta)
+                                        .foregroundStyle(RSR.labelSecondary)
                                 }
 
                                 Spacer()
@@ -275,19 +321,17 @@ struct DetectModelSelectorSheet: View {
                         .buttonStyle(.plain)
                         .listRowBackground(
                             RoundedRectangle(cornerRadius: 16)
-                                .fill(selectedVersion == model.version ? Color(red: 0.41, green: 0.80, blue: 1.0).opacity(0.12) : Color.white.opacity(0.06))
+                                .fill(selectedVersion == model.version ? RSR.accentTint : RSR.surfaceGlass)
                         )
                     }
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(Color.black.ignoresSafeArea())
+            .background(RSR.canvas.ignoresSafeArea())
             .navigationTitle("Select Model")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
             .presentationDetents([.medium, .large])
         }
-        .preferredColorScheme(.dark)
     }
 
     private func modelMetadata(for model: InstalledProjectModel) -> String {

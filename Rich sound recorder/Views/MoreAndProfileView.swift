@@ -97,9 +97,6 @@ struct UploadLabelSheet: View {
     @State private var displayedDuration: String = "0:00"
 
     private let waveformLoader = WaveformLoader()
-    private let waveformBlue = Color(red: 0.11, green: 0.53, blue: 0.98)
-    private let sheetFill = Color.white.opacity(0.11)
-    private let sheetStroke = Color.white.opacity(0.07)
     private let chipColumns = [
         GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 12, alignment: .leading)
     ]
@@ -107,44 +104,43 @@ struct UploadLabelSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.black.ignoresSafeArea()
+                RSR.canvas.ignoresSafeArea()
 
                 VStack(spacing: 0) {
                     Spacer()
 
-                    VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: RSRSpace.md) {
                         Capsule()
-                            .fill(Color.white.opacity(0.22))
+                            .fill(RSR.labelTertiary)
                             .frame(width: 76, height: 8)
                             .frame(maxWidth: .infinity)
                             .padding(.top, 6)
 
-                        HStack(alignment: .bottom, spacing: 12) {
+                        HStack(alignment: .center, spacing: 12) {
                             Text("New recording")
-                                .font(.system(size: 28, weight: .bold, design: .rounded))
-                                .foregroundStyle(.white)
+                                .font(.rsrTitle)
+                                .tracking(RSRTracking.title)
+                                .foregroundStyle(RSR.labelPrimary)
 
                             Spacer()
 
                             Text(displayedDuration)
-                                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                .font(.rsrHeadline)
                                 .monospacedDigit()
-                                .foregroundStyle(.white)
+                                .foregroundStyle(RSR.labelPrimary)
                                 .padding(.horizontal, 18)
                                 .padding(.vertical, 10)
-                                .background(
-                                    Capsule()
-                                        .fill(Color.white.opacity(0.08))
-                                )
+                                .rsrGlass(.thin, radius: RSRRadius.chip, elevation: .resting)
                         }
 
                         waveformCard
 
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text("CHOOSE A LABEL")
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                                .tracking(1.6)
-                                .foregroundStyle(Color.white.opacity(0.45))
+                        VStack(alignment: .leading, spacing: RSRSpace.sm) {
+                            Text("Choose a label")
+                                .font(.rsrCaption)
+                                .tracking(RSRTracking.eyebrow)
+                                .foregroundStyle(RSR.labelSecondary)
+                                .textCase(.uppercase)
 
                             labelSection
                         }
@@ -152,104 +148,56 @@ struct UploadLabelSheet: View {
                         NavigationLink {
                             RecordingSettingsScreen()
                         } label: {
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text("Recording quality")
-                                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.white)
-
-                                    Text(recordingQualitySummary)
-                                        .font(.system(size: 14, weight: .medium, design: .rounded))
-                                        .foregroundStyle(Color.white.opacity(0.5))
-                                        .lineLimit(1)
-                                }
-
-                                Spacer()
-
-                                Image(systemName: "chevron.right")
-                                    .font(.title3.weight(.semibold))
-                                    .foregroundStyle(Color.white.opacity(0.32))
-                            }
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 20)
-                            .background(
-                                RoundedRectangle(cornerRadius: 22)
-                                    .fill(Color.white.opacity(0.08))
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 22)
-                                    .stroke(sheetStroke, lineWidth: 1)
+                            RSRListRow(
+                                title: "Recording quality",
+                                subtitle: recordingQualitySummary,
+                                systemImage: "waveform"
                             )
                         }
                         .buttonStyle(.plain)
 
-                        VStack(spacing: 14) {
+                        VStack(spacing: RSRSpace.sm) {
                             Button(action: onUpload) {
                                 if isUploading {
                                     ProgressView()
                                         .tint(.white)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 18)
+                                        .frame(maxWidth: .infinity, minHeight: 54)
                                 } else {
                                     Text("Upload to dataset")
-                                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                                        .font(.rsrHeadline)
                                         .foregroundStyle(.white)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 18)
+                                        .frame(maxWidth: .infinity, minHeight: 54)
                                 }
                             }
                             .buttonStyle(.plain)
                             .background(
-                                RoundedRectangle(cornerRadius: 22)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [
-                                                Color(red: 0.29, green: 0.64, blue: 1.0),
-                                                Color(red: 0.09, green: 0.51, blue: 0.98)
-                                            ],
-                                            startPoint: .top,
-                                            endPoint: .bottom
-                                        )
-                                    )
+                                RoundedRectangle(cornerRadius: RSRRadius.control, style: .continuous)
+                                    .fill(RSR.accentGradient)
                             )
-                            .shadow(color: waveformBlue.opacity(0.33), radius: 18, y: 10)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: RSRRadius.control, style: .continuous)
+                                    .strokeBorder(.white.opacity(0.4), lineWidth: 0.5)
+                            )
+                            .rsrShadow(.accentLift)
                             .opacity(uploadEnabled ? 1 : 0.45)
                             .disabled(!uploadEnabled || isUploading)
 
                             Button("Discard", action: onCancel)
-                                .font(.system(size: 17, weight: .semibold, design: .rounded))
-                                .foregroundStyle(Color(red: 1.0, green: 0.32, blue: 0.26))
-                                .frame(maxWidth: .infinity)
+                                .font(.rsrHeadline)
+                                .foregroundStyle(RSR.danger)
+                                .frame(maxWidth: .infinity, minHeight: 44)
                         }
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, RSRSpace.screen)
                     .padding(.top, 18)
                     .padding(.bottom, 18)
-                    .background(
-                        UnevenRoundedRectangle(
-                            topLeadingRadius: 34,
-                            bottomLeadingRadius: 28,
-                            bottomTrailingRadius: 28,
-                            topTrailingRadius: 34
-                        )
-                        .fill(Color(red: 0.11, green: 0.11, blue: 0.12))
-                    )
-                    .overlay(
-                        UnevenRoundedRectangle(
-                            topLeadingRadius: 34,
-                            bottomLeadingRadius: 28,
-                            bottomTrailingRadius: 28,
-                            topTrailingRadius: 34
-                        )
-                        .stroke(Color.white.opacity(0.05), lineWidth: 1)
-                    )
+                    .background(sheetBackground)
                 }
             }
             .task(id: fileURL) {
                 loadRecordingPreview()
             }
         }
-        .preferredColorScheme(.dark)
         .presentationDetents([.height(620)])
         .presentationDragIndicator(.hidden)
     }
@@ -258,31 +206,51 @@ struct UploadLabelSheet: View {
         !isLoadingLabels && !labels.isEmpty && selectedLabelUID != nil && labelLoadingError == nil
     }
 
+    private var sheetBackground: some View {
+        UnevenRoundedRectangle(
+            topLeadingRadius: 34,
+            bottomLeadingRadius: 28,
+            bottomTrailingRadius: 28,
+            topTrailingRadius: 34
+        )
+        .fill(RSR.surfaceGlassStrong)
+        .overlay(
+            UnevenRoundedRectangle(
+                topLeadingRadius: 34,
+                bottomLeadingRadius: 28,
+                bottomTrailingRadius: 28,
+                topTrailingRadius: 34
+            )
+            .stroke(RSR.glassBorder, lineWidth: 1)
+        )
+        .rsrShadow(.cardDark)
+    }
+
     @ViewBuilder
     private var labelSection: some View {
         if isLoadingLabels {
             HStack(spacing: 10) {
                 ProgressView()
-                    .tint(.white)
+                    .tint(RSR.labelPrimary)
                 Text("Loading labels...")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Color.white.opacity(0.72))
+                    .font(.rsrSubhead)
+                    .foregroundStyle(RSR.labelSecondary)
             }
             .padding(.vertical, 8)
         } else if let labelLoadingError {
             VStack(alignment: .leading, spacing: 10) {
                 Text(labelLoadingError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                    .font(.rsrSubhead)
+                    .foregroundStyle(RSR.danger)
 
                 Button("Retry", action: onRetry)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(waveformBlue)
+                    .font(.rsrSubhead.weight(.semibold))
+                    .foregroundStyle(RSR.accent)
             }
         } else if labels.isEmpty {
             Text("No labels available")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(.rsrSubhead)
+                .foregroundStyle(RSR.labelSecondary)
         } else {
             LazyVGrid(columns: chipColumns, alignment: .leading, spacing: 12) {
                 ForEach(labels) { label in
@@ -295,13 +263,13 @@ struct UploadLabelSheet: View {
     private var waveformCard: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 28)
-                .fill(Color(red: 0.10, green: 0.16, blue: 0.24))
+                .fill(RSR.surfaceGlass)
             RoundedRectangle(cornerRadius: 28)
-                .stroke(waveformBlue.opacity(0.28), lineWidth: 1)
+                .stroke(RSR.accent.opacity(0.24), lineWidth: 1)
 
             if waveformSamples.isEmpty {
                 ProgressView()
-                    .tint(.white.opacity(0.8))
+                    .tint(RSR.labelPrimary)
             } else {
                 trainingWaveform(samples: waveformSamples)
                     .padding(.horizontal, 18)
@@ -319,37 +287,34 @@ struct UploadLabelSheet: View {
             AppHaptics.stepTick()
         } label: {
             Text(label.name)
-                .font(.system(size: 16, weight: .bold, design: .rounded))
-                .foregroundStyle(isSelected ? .white : Color.white.opacity(0.78))
+                .font(.rsrBody.weight(.semibold))
+                .foregroundStyle(isSelected ? .white : RSR.labelPrimary)
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16)
-                .background(
-                    Capsule()
-                        .fill(
-                            isSelected
-                            ? LinearGradient(
-                                colors: [
-                                    Color(red: 0.29, green: 0.64, blue: 1.0),
-                                    Color(red: 0.09, green: 0.51, blue: 0.98)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                            : LinearGradient(
-                                colors: [sheetFill, sheetFill],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                )
-                .overlay(
-                    Capsule()
-                        .stroke(isSelected ? waveformBlue.opacity(0.28) : Color.clear, lineWidth: 1)
-                )
-                .shadow(color: isSelected ? waveformBlue.opacity(0.28) : .clear, radius: 12, y: 6)
+                .background(labelChipBackground(isSelected: isSelected))
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func labelChipBackground(isSelected: Bool) -> some View {
+        if isSelected {
+            Capsule()
+                .fill(RSR.accentGradient)
+                .overlay(
+                    Capsule()
+                        .strokeBorder(.white.opacity(0.32), lineWidth: 0.5)
+                )
+                .shadow(color: RSR.accent.opacity(0.28), radius: 12, y: 6)
+        } else {
+            Capsule()
+                .fill(RSR.surfaceGlass)
+                .overlay(
+                    Capsule()
+                        .stroke(RSR.glassBorder.opacity(0.55), lineWidth: 0.5)
+                )
+        }
     }
 
     private func trainingWaveform(samples: [Double]) -> some View {
@@ -360,7 +325,7 @@ struct UploadLabelSheet: View {
             HStack(alignment: .center, spacing: spacing) {
                 ForEach(Array(samples.enumerated()), id: \.offset) { _, sample in
                     RoundedRectangle(cornerRadius: barWidth / 2)
-                        .fill(waveformBlue)
+                        .fill(RSR.accent)
                         .frame(
                             width: barWidth,
                             height: max(10, geo.size.height * CGFloat(sample))
@@ -501,7 +466,6 @@ struct ProfileSheet: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
         .presentationDetents([.medium, .large])
     }
 }

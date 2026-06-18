@@ -62,6 +62,13 @@ struct SettingsWorkspaceView: View {
                 } label: {
                     settingsRow(title: "Recording settings", detail: recordingSettingsStore.settings.summaryText)
                 }
+
+                NavigationLink {
+                    DesignSystemShowcaseView()
+                } label: {
+                    settingsRow(title: "Design system", detail: "Preview")
+                }
+
                 settingsRow(title: "Notifications", detail: "Not in scope")
             }
             .listRowBackground(Color.white.opacity(0.06))
