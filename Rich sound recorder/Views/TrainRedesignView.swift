@@ -103,7 +103,7 @@ struct TrainWorkspaceView: View {
         }
         .navigationDestination(isPresented: $showRecordingView) {
             RecordingView(
-                preStartMessage: "Tap the record button once you're ready to start training."
+                projectName: appContext.activeProject?.name
             ) { recording in
                 pendingRecording = recording
                 showUploadSheet = true

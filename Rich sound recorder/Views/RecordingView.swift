@@ -12,220 +12,290 @@ struct RecordingView: View {
     @StateObject private var recorder = AudioRecorder()
     @StateObject private var settingsStore = RecordingSettingsStore.shared
     @State private var recordingStartedAt: Date?
+    @State private var hasAutoStarted = false
+    @State private var hasCompletedRecording = false
+    @State private var shouldPulseIndicator = false
     @Environment(\.dismiss) private var dismiss
 
-    let preStartMessage: String?
+    let projectName: String?
     let onComplete: (CompletedRecording) -> Void
 
     init(
-        preStartMessage: String? = nil,
+        projectName: String? = nil,
         onComplete: @escaping (CompletedRecording) -> Void
     ) {
-        self.preStartMessage = preStartMessage
+        self.projectName = projectName
         self.onComplete = onComplete
     }
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            immersiveBackground
 
-            ScrollView {
-                VStack(spacing: 24) {
-                    spectrumSection
-                    levelMeterSection
-                    recordButton
-                }
-                .padding(.horizontal)
-                .padding(.bottom, 40)
-            }
-        }
-        .navigationTitle("Record Audio")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button("Cancel") {
-                    if recorder.isRecording {
-                        recorder.stop()
-                    }
-                    dismiss()
-                }
-                .foregroundStyle(.cyan)
-            }
+            VStack(spacing: 0) {
+                header
 
+                Spacer(minLength: 10)
+
+                VStack(spacing: 14) {
+                    recordingBadge
+                    timerText
+                    waveformSection
+                }
+                .frame(maxWidth: .infinity)
+
+                Spacer(minLength: 18)
+
+                VStack(spacing: 16) {
+                    stopButton
+                    bottomInstruction
+                }
+                .padding(.bottom, 28)
+            }
         }
         .preferredColorScheme(.dark)
-        .task { await recorder.requestPermission() }
-    }
-
-    // MARK: - Spectrum
-
-    private var spectrumSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                sectionLabel("Frequency Spectrum")
-                Spacer()
-                Text("20 Hz – \(nyquistLabel)")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+        .toolbar(.hidden, for: .navigationBar)
+        .statusBarHidden(false)
+        .task {
+            await recorder.requestPermission()
+            startAutomaticallyIfNeeded()
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                shouldPulseIndicator = true
             }
-
-            SpectrumView(bands: recorder.frequencyBands)
-                .frame(height: 88)
-                .background(Color.white.opacity(0.04))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .onDisappear {
+            guard !hasCompletedRecording else { return }
+            discardRecordingIfNeeded()
         }
     }
 
-    // MARK: - Level Meter
+    private var immersiveBackground: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.03, green: 0.05, blue: 0.09),
+                    Color.black
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
 
-    private var levelMeterSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("Input Level")
+            RadialGradient(
+                colors: [
+                    Color(red: 0.05, green: 0.14, blue: 0.27).opacity(0.9),
+                    Color(red: 0.03, green: 0.07, blue: 0.12).opacity(0.5),
+                    .clear
+                ],
+                center: .center,
+                startRadius: 20,
+                endRadius: 340
+            )
+            .blur(radius: 8)
+        }
+        .ignoresSafeArea()
+    }
 
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.white.opacity(0.08))
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(levelGradient)
-                        .frame(width: max(4, geo.size.width * CGFloat(recorder.inputLevel)))
-                        .animation(.easeOut(duration: 0.06), value: recorder.inputLevel)
-                }
+    private var header: some View {
+        HStack(alignment: .center) {
+            Button("Cancel") {
+                cancelAndDismiss()
             }
-            .frame(height: 8)
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(Color(red: 0.15, green: 0.52, blue: 0.98))
+
+            Spacer()
+
+            Text(projectName ?? "Training")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(Color.white.opacity(0.55))
+                .lineLimit(1)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 14)
+    }
+
+    private var recordingBadge: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color.red.opacity(0.18))
+                    .frame(width: 34, height: 34)
+                    .scaleEffect(shouldPulseIndicator ? 1.2 : 0.9)
+                    .opacity(shouldPulseIndicator ? 0.95 : 0.45)
+
+                Circle()
+                    .fill(Color(red: 1.0, green: 0.32, blue: 0.26))
+                    .frame(width: 18, height: 18)
+                    .shadow(color: Color.red.opacity(0.55), radius: 10)
+            }
+
+            Text(recorder.isRecording ? "RECORDING" : "PREPARING")
+                .font(.headline.weight(.bold))
+                .tracking(0.8)
+                .foregroundStyle(Color.white.opacity(0.55))
         }
     }
 
-    // MARK: - Record Button
+    private var timerText: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            Text(formattedElapsedTime(referenceDate: context.date))
+                .font(.system(size: 90, weight: .ultraLight, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .contentTransition(.numericText())
+        }
+    }
 
-    private var recordButton: some View {
-        VStack(spacing: 14) {
+    private var waveformSection: some View {
+        SpectrumView(
+            bands: recorder.frequencyBands,
+            style: .mirroredBars,
+            tint: Color(red: 0.11, green: 0.53, blue: 0.98)
+        )
+        .frame(height: 290)
+        .padding(.horizontal, 22)
+        .opacity(recorder.permissionDenied ? 0.25 : 1)
+        .overlay {
             if recorder.permissionDenied {
                 permissionDeniedView
-            } else {
-                Button {
-                    if recorder.isRecording {
-                        let recordingEndedAt = Date()
-                        recorder.stop()
-                        if let url = recorder.lastRecordingURL {
-                            let startDate = recordingStartedAt ?? recordingEndedAt
-                            let duration = recordingDuration(for: url, fallbackStartDate: startDate, endDate: recordingEndedAt)
-                            onComplete(
-                                CompletedRecording(
-                                    fileURL: url,
-                                    startTimestamp: startDate.timeIntervalSince1970,
-                                    endTimestamp: recordingEndedAt.timeIntervalSince1970,
-                                    audioEndTimestamp: duration
-                                )
-                            )
-                            dismiss()
-                        }
-                    } else {
-                        recordingStartedAt = Date()
-                        recorder.start(settings: settingsStore.settings)
-                        if recorder.isRecording {
-                            AppHaptics.stepTick()
-                        }
-                    }
-                } label: {
-                    ZStack {
-                        Circle()
-                            .fill(recorder.isRecording ? Color.red : Color.cyan)
-                            .frame(width: 76, height: 76)
-                            .shadow(color: recorder.isRecording ? .red.opacity(0.5) : .cyan.opacity(0.4),
-                                    radius: recorder.isRecording ? 16 : 8)
-
-                        if recorder.isRecording {
-                            RoundedRectangle(cornerRadius: 5)
-                                .fill(Color.white)
-                                .frame(width: 26, height: 26)
-                        } else {
-                            Image(systemName: "mic.fill")
-                                .font(.title2)
-                                .foregroundStyle(.black)
-                        }
-                    }
-                    .animation(.easeInOut(duration: 0.2), value: recorder.isRecording)
-                }
-                .buttonStyle(.plain)
-
-                statusLine
+                    .padding(.horizontal, 30)
+            } else if let errorMessage = recorder.errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red.opacity(0.9))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 34)
+                    .padding(.vertical, 12)
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(0.06))
+                    )
             }
         }
-        .padding(.top, 8)
     }
 
-    @ViewBuilder
-    private var statusLine: some View {
-        if recorder.isRecording {
-            VStack(spacing: 4) {
-                Text("Recording  ·  \(settingsStore.settings.micMode.rawValue)")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                Text("Tap again to finish")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-        } else if let preStartMessage {
-            Text(preStartMessage)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
-        } else if let url = recorder.lastRecordingURL {
-            Text("Saved: \(url.lastPathComponent)")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-        }
+    private var stopButton: some View {
+        Button {
+            finishRecording()
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(Color.white.opacity(0.08))
+                    .frame(width: 74, height: 74)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.white.opacity(0.12), lineWidth: 2)
+                    )
 
-        if let err = recorder.errorMessage {
-            Text(err)
-                .font(.caption2)
-                .foregroundStyle(.red)
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(Color(red: 1.0, green: 0.32, blue: 0.26))
+                    .frame(width: 31, height: 31)
+                    .shadow(color: Color.red.opacity(0.35), radius: 18)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(!recorder.isRecording)
+    }
+
+    private var bottomInstruction: some View {
+        VStack(spacing: 8) {
+            Text(recorder.permissionDenied ? "Microphone access is required to record for training" : "Tap to stop · choose a label next")
+                .font(.body.weight(.medium))
+                .foregroundStyle(Color.white.opacity(0.5))
                 .multilineTextAlignment(.center)
-                .padding(.horizontal)
+                .padding(.horizontal, 24)
+
+            Text(settingsStore.settings.summaryText)
+                .font(.caption.monospaced())
+                .foregroundStyle(Color.white.opacity(0.25))
         }
     }
 
     private var permissionDeniedView: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "mic.slash")
-                .font(.largeTitle)
+        VStack(spacing: 12) {
+            Image(systemName: "mic.slash.fill")
+                .font(.system(size: 34, weight: .semibold))
                 .foregroundStyle(.orange)
 
             Text("Microphone access is required.")
-                .font(.subheadline)
+                .font(.headline)
+                .foregroundStyle(.white)
 
             Button("Open Settings") {
                 if let url = URL(string: "app-settings:") {
                     UIApplication.shared.open(url)
                 }
             }
-            .foregroundStyle(.cyan)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Color(red: 0.15, green: 0.52, blue: 0.98))
         }
     }
 
-    // MARK: - Helpers
+    private func startAutomaticallyIfNeeded() {
+        guard !hasAutoStarted else { return }
+        guard !recorder.permissionDenied else { return }
 
-    private func sectionLabel(_ text: String) -> some View {
-        Text(text)
-            .font(.caption)
-            .fontWeight(.medium)
-            .foregroundStyle(.secondary)
-            .textCase(.uppercase)
-            .tracking(0.5)
+        hasAutoStarted = true
+        recordingStartedAt = Date()
+        recorder.start(settings: settingsStore.settings)
+        if recorder.isRecording {
+            AppHaptics.stepTick()
+        }
     }
 
-    private var nyquistLabel: String {
-        let hz = settingsStore.settings.sampleRate.nyquist
-        return hz >= 1_000 ? "\(Int(hz / 1_000)) kHz" : "\(Int(hz)) Hz"
+    private func finishRecording() {
+        guard recorder.isRecording else { return }
+
+        let recordingEndedAt = Date()
+        let startDate = recordingStartedAt ?? recordingEndedAt
+        recorder.stop()
+
+        guard let url = recorder.lastRecordingURL else { return }
+
+        hasCompletedRecording = true
+        let duration = recordingDuration(for: url, fallbackStartDate: startDate, endDate: recordingEndedAt)
+        onComplete(
+            CompletedRecording(
+                fileURL: url,
+                startTimestamp: startDate.timeIntervalSince1970,
+                endTimestamp: recordingEndedAt.timeIntervalSince1970,
+                audioEndTimestamp: duration
+            )
+        )
+        dismiss()
     }
 
-    private var levelGradient: LinearGradient {
-        LinearGradient(colors: [.green, .yellow, .orange, .red],
-                       startPoint: .leading, endPoint: .trailing)
+    private func cancelAndDismiss() {
+        discardRecordingIfNeeded()
+        dismiss()
+    }
+
+    private func discardRecordingIfNeeded() {
+        let discardedURL = recorder.lastRecordingURL
+        if recorder.isRecording {
+            recorder.stop()
+        }
+
+        if let discardedURL {
+            try? FileManager.default.removeItem(at: discardedURL)
+            if recorder.lastRecordingURL == discardedURL {
+                recorder.lastRecordingURL = nil
+            }
+        }
+    }
+
+    private func formattedElapsedTime(referenceDate: Date) -> String {
+        guard let recordingStartedAt, recorder.isRecording else {
+            return "0:00"
+        }
+
+        let elapsedSeconds = max(0, Int(referenceDate.timeIntervalSince(recordingStartedAt)))
+        let minutes = elapsedSeconds / 60
+        let seconds = elapsedSeconds % 60
+        return "\(minutes):" + String(format: "%02d", seconds)
     }
 
     private func recordingDuration(for fileURL: URL, fallbackStartDate: Date, endDate: Date) -> Double {
@@ -246,9 +316,9 @@ struct RecordingView: View {
 // MARK: - MicModeRow
 
 struct MicModeRow: View {
-    let mode:       MicMode
+    let mode: MicMode
     let isSelected: Bool
-    let action:     () -> Void
+    let action: () -> Void
 
     var body: some View {
         Button(action: action) {
@@ -292,37 +362,87 @@ struct MicModeRow: View {
 
 /// Displays real-time FFT magnitude as a bar chart with logarithmic frequency scaling.
 struct SpectrumView: View {
+    enum Style {
+        case bottomBars
+        case mirroredBars
+    }
+
     let bands: [Float]
+    var style: Style = .bottomBars
+    var tint: Color? = nil
 
     var body: some View {
         GeometryReader { geo in
-            let barWidth = (geo.size.width - CGFloat(bands.count - 1)) / CGFloat(bands.count)
+            let renderedBands = style == .mirroredBars ? interpolatedBands(targetCount: 44) : bands
+            let spacing: CGFloat = style == .mirroredBars ? 7 : 1
+            let horizontalPadding: CGFloat = style == .mirroredBars ? 0 : 6
+            let barWidth = max(3, (geo.size.width - horizontalPadding * 2 - CGFloat(renderedBands.count - 1) * spacing) / CGFloat(renderedBands.count))
 
-            HStack(alignment: .bottom, spacing: 1) {
-                ForEach(0..<bands.count, id: \.self) { i in
-                    let value = CGFloat(bands[i])
-                    // Hue shifts from blue (0.60) at low frequencies to green (0.35) at high.
-                    let hue   = 0.60 - Double(i) / Double(bands.count) * 0.25
+            HStack(alignment: .center, spacing: spacing) {
+                ForEach(0..<renderedBands.count, id: \.self) { index in
+                    let rawValue = CGFloat(max(renderedBands[index], 0))
+                    let value = style == .mirroredBars
+                        ? mirroredAmplitude(for: rawValue)
+                        : rawValue
+                    let fill = resolvedColor(for: index)
+                    let heightMultiplier: CGFloat = style == .mirroredBars ? 0.94 : 1
+                    let barHeight = max(style == .mirroredBars ? 8 : 6, geo.size.height * value * heightMultiplier)
 
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color(hue: hue, saturation: 0.85, brightness: 0.9))
-                        .frame(
-                            width:  max(1, barWidth),
-                            height: max(2, geo.size.height * value)
-                        )
-                        .animation(.easeOut(duration: 0.05), value: value)
+                    RoundedRectangle(cornerRadius: style == .mirroredBars ? 3 : 2)
+                        .fill(fill)
+                        .frame(width: barWidth, height: barHeight)
+                        .frame(maxHeight: .infinity, alignment: .center)
+                        .shadow(color: style == .mirroredBars ? fill.opacity(0.22) : .clear, radius: 4)
+                        .animation(.easeOut(duration: 0.08), value: value)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            .padding(6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: style == .mirroredBars ? .center : .bottom)
+            .padding(.horizontal, horizontalPadding)
+        }
+    }
+
+    private func resolvedColor(for index: Int) -> Color {
+        if let tint {
+            return tint
+        }
+
+        let hue = 0.60 - Double(index) / Double(max(bands.count, 1)) * 0.25
+        return Color(hue: hue, saturation: 0.85, brightness: 0.9)
+    }
+
+    private func mirroredAmplitude(for rawValue: CGFloat) -> CGFloat {
+        let normalized = min(max(rawValue, 0), 1)
+        let boosted = pow(normalized, 0.78) * 1.35
+        return min(max(boosted + 0.015, 0.04), 1)
+    }
+
+    private func interpolatedBands(targetCount: Int) -> [Float] {
+        guard style == .mirroredBars, !bands.isEmpty, targetCount > bands.count else {
+            return bands
+        }
+
+        if bands.count == 1 {
+            return Array(repeating: bands[0], count: targetCount)
+        }
+
+        return (0..<targetCount).map { index in
+            let position = Float(index) / Float(max(targetCount - 1, 1)) * Float(bands.count - 1)
+            let lowerIndex = Int(position.rounded(.down))
+            let upperIndex = min(lowerIndex + 1, bands.count - 1)
+            let fraction = position - Float(lowerIndex)
+            let lower = bands[lowerIndex]
+            let upper = bands[upperIndex]
+            let interpolated = lower + (upper - lower) * fraction
+
+            let leftNeighbor = bands[max(0, lowerIndex - 1)]
+            let rightNeighbor = bands[min(bands.count - 1, upperIndex + 1)]
+            return (leftNeighbor * 0.18) + (interpolated * 0.64) + (rightNeighbor * 0.18)
         }
     }
 }
 
 #Preview {
-    NavigationStack {
-        RecordingView { recording in
-            print("Recording completed: \(recording.fileURL)")
-        }
+    RecordingView(projectName: "Compressor Line A") { recording in
+        print("Recording completed: \(recording.fileURL)")
     }
 }
