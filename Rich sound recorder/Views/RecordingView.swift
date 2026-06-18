@@ -12,9 +12,9 @@ struct RecordingView: View {
     @StateObject private var recorder = AudioRecorder()
     @StateObject private var settingsStore = RecordingSettingsStore.shared
     @State private var recordingStartedAt: Date?
-    @State private var hasAutoStarted = false
     @State private var hasCompletedRecording = false
     @State private var shouldPulseIndicator = false
+    @Namespace private var recordingIndicatorNamespace
     @Environment(\.dismiss) private var dismiss
 
     let projectName: String?
@@ -47,7 +47,7 @@ struct RecordingView: View {
                 Spacer(minLength: 18)
 
                 VStack(spacing: 16) {
-                    stopButton
+                    primaryActionArea
                     bottomInstruction
                 }
                 .padding(.bottom, 28)
@@ -58,7 +58,7 @@ struct RecordingView: View {
         .statusBarHidden(false)
         .task {
             await recorder.requestPermission()
-            startAutomaticallyIfNeeded()
+            startMonitoringIfNeeded()
         }
         .onAppear {
             withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
@@ -120,19 +120,26 @@ struct RecordingView: View {
     private var recordingBadge: some View {
         HStack(spacing: 12) {
             ZStack {
-                Circle()
-                    .fill(Color.red.opacity(0.18))
-                    .frame(width: 34, height: 34)
-                    .scaleEffect(shouldPulseIndicator ? 1.2 : 0.9)
-                    .opacity(shouldPulseIndicator ? 0.95 : 0.45)
+                if recorder.isRecording {
+                    Circle()
+                        .fill(Color.red.opacity(0.18))
+                        .frame(width: 34, height: 34)
+                        .scaleEffect(shouldPulseIndicator ? 1.2 : 0.9)
+                        .opacity(shouldPulseIndicator ? 0.95 : 0.45)
 
-                Circle()
-                    .fill(Color(red: 1.0, green: 0.32, blue: 0.26))
-                    .frame(width: 18, height: 18)
-                    .shadow(color: Color.red.opacity(0.55), radius: 10)
+                    Circle()
+                        .fill(Color(red: 1.0, green: 0.32, blue: 0.26))
+                        .frame(width: 18, height: 18)
+                        .shadow(color: Color.red.opacity(0.55), radius: 10)
+                        .matchedGeometryEffect(id: "recording-indicator", in: recordingIndicatorNamespace)
+                } else {
+                    Circle()
+                        .fill(Color.white.opacity(0.25))
+                        .frame(width: 16, height: 16)
+                }
             }
 
-            Text(recorder.isRecording ? "RECORDING" : "PREPARING")
+            Text(recorder.isRecording ? "RECORDING" : "READY")
                 .font(.headline.weight(.bold))
                 .tracking(0.8)
                 .foregroundStyle(Color.white.opacity(0.55))
@@ -177,32 +184,63 @@ struct RecordingView: View {
         }
     }
 
-    private var stopButton: some View {
-        Button {
-            finishRecording()
-        } label: {
-            ZStack {
-                Circle()
-                    .fill(Color.white.opacity(0.08))
-                    .frame(width: 74, height: 74)
-                    .overlay(
-                        Circle()
-                            .stroke(Color.white.opacity(0.12), lineWidth: 2)
-                    )
+    @ViewBuilder
+    private var primaryActionArea: some View {
+        if recorder.isRecording {
+            Button {
+                finishRecording()
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(width: 74, height: 74)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.white.opacity(0.12), lineWidth: 2)
+                        )
 
-                RoundedRectangle(cornerRadius: 18)
-                    .fill(Color(red: 1.0, green: 0.32, blue: 0.26))
-                    .frame(width: 31, height: 31)
-                    .shadow(color: Color.red.opacity(0.35), radius: 18)
+                    RoundedRectangle(cornerRadius: 18)
+                        .fill(Color(red: 1.0, green: 0.32, blue: 0.26))
+                        .frame(width: 31, height: 31)
+                        .shadow(color: Color.red.opacity(0.35), radius: 18)
+                }
             }
+            .buttonStyle(.plain)
+        } else {
+            Button {
+                startRecording()
+            } label: {
+                HStack(spacing: 14) {
+                    Circle()
+                        .fill(Color(red: 1.0, green: 0.32, blue: 0.26))
+                        .frame(width: 18, height: 18)
+                        .shadow(color: Color.red.opacity(0.45), radius: 10)
+                        .matchedGeometryEffect(id: "recording-indicator", in: recordingIndicatorNamespace)
+
+                    Text("Start recording")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 18)
+                .background(
+                    RoundedRectangle(cornerRadius: 24)
+                        .fill(Color.white.opacity(0.12))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(recorder.permissionDenied)
         }
-        .buttonStyle(.plain)
-        .disabled(!recorder.isRecording)
     }
 
     private var bottomInstruction: some View {
         VStack(spacing: 8) {
-            Text(recorder.permissionDenied ? "Microphone access is required to record for training" : "Tap to stop · choose a label next")
+            Text(instructionText)
                 .font(.body.weight(.medium))
                 .foregroundStyle(Color.white.opacity(0.5))
                 .multilineTextAlignment(.center)
@@ -212,6 +250,13 @@ struct RecordingView: View {
                 .font(.caption.monospaced())
                 .foregroundStyle(Color.white.opacity(0.25))
         }
+    }
+
+    private var instructionText: String {
+        if recorder.permissionDenied {
+            return "Microphone access is required to record for training"
+        }
+        return recorder.isRecording ? "Tap to stop · choose a label next" : "Tap start to begin · choose a label next"
     }
 
     private var permissionDeniedView: some View {
@@ -234,24 +279,30 @@ struct RecordingView: View {
         }
     }
 
-    private func startAutomaticallyIfNeeded() {
-        guard !hasAutoStarted else { return }
+    private func startRecording() {
         guard !recorder.permissionDenied else { return }
-
-        hasAutoStarted = true
+        AppHaptics.stepTick()
         recordingStartedAt = Date()
-        recorder.start(settings: settingsStore.settings)
-        if recorder.isRecording {
-            AppHaptics.stepTick()
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.84)) {
+            recorder.start(settings: settingsStore.settings)
         }
+    }
+
+    private func startMonitoringIfNeeded() {
+        guard !recorder.permissionDenied else { return }
+        guard !recorder.isRecording else { return }
+        recorder.startMonitoring(settings: settingsStore.settings)
     }
 
     private func finishRecording() {
         guard recorder.isRecording else { return }
 
+        AppHaptics.stepTick()
         let recordingEndedAt = Date()
         let startDate = recordingStartedAt ?? recordingEndedAt
-        recorder.stop()
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
+            recorder.stop()
+        }
 
         guard let url = recorder.lastRecordingURL else { return }
 
@@ -277,6 +328,8 @@ struct RecordingView: View {
         let discardedURL = recorder.lastRecordingURL
         if recorder.isRecording {
             recorder.stop()
+        } else {
+            recorder.stopMonitoring()
         }
 
         if let discardedURL {
