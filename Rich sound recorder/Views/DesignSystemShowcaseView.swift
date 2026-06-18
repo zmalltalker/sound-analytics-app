@@ -44,6 +44,7 @@ struct DesignSystemShowcaseView: View {
 
             RSRPrimaryButton(title: "Start training")
             RSRSecondaryButton(title: "Record audio", showsRecordDot: true)
+            
 
             HStack {
                 RSRTonalButton(title: "Switch")
@@ -141,6 +142,12 @@ struct DesignSystemShowcaseView: View {
         VStack(alignment: .leading, spacing: RSRSpace.md) {
             sectionTitle("Navigation")
             RSRTabBar(tabs: RSRTabBar.standardTabs, selection: $selectedTab)
+        }
+    }
+
+    private var typographySection: some View {
+        VStack(alignment: .leading, spacing: RSRSpace.md) {
+            sectionTitle("Navigation")
         }
     }
 

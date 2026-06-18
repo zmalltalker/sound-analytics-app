@@ -492,124 +492,108 @@ struct DetectionTimelineCard: View {
     let duration: Double
     let events: [DetectionEvent]
 
-    private let analysisColor = Color(red: 0.41, green: 0.80, blue: 1.0)
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if !events.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Markers")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
+        RSRCard(radius: RSRRadius.card) {
+            VStack(alignment: .leading, spacing: RSRSpace.md) {
+                if !events.isEmpty {
+                    VStack(alignment: .leading, spacing: RSRSpace.sm) {
+                        Text("Markers")
+                            .font(.rsrCaption)
+                            .tracking(RSRTracking.eyebrow)
+                            .foregroundStyle(RSR.labelSecondary)
+                            .textCase(.uppercase)
 
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
-                                HStack(spacing: 6) {
-                                    markerBadge(index)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
+                                    HStack(spacing: 6) {
+                                        markerBadge(index)
 
-                                    Text(event.title)
-                                        .font(.caption2.weight(.medium))
-                                        .foregroundStyle(.primary)
-                                        .lineLimit(1)
+                                        Text(event.title)
+                                            .font(.rsrSubhead.weight(.semibold))
+                                            .foregroundStyle(RSR.labelPrimary)
+                                            .lineLimit(1)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 7)
+                                    .background(
+                                        Capsule()
+                                            .fill(RSR.surfaceGlass)
+                                    )
                                 }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 7)
-                                .background(
-                                    Capsule()
-                                        .fill(Color.white.opacity(0.05))
-                                )
                             }
                         }
                     }
                 }
-            }
 
-            ZStack(alignment: .bottomLeading) {
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color.white.opacity(0.05))
+                ZStack(alignment: .bottomLeading) {
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(RSR.surfaceGlass)
 
-                GeometryReader { geometry in
-                    ZStack(alignment: .bottomLeading) {
-                        ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
-                            let xStart = xPosition(for: event.startTime, width: geometry.size.width)
-                            let xEnd = xPosition(for: event.endTime, width: geometry.size.width)
+                    GeometryReader { geometry in
+                        ZStack(alignment: .bottomLeading) {
+                            ForEach(Array(events.enumerated()), id: \.element.id) { _, event in
+                                let xStart = xPosition(for: event.startTime, width: geometry.size.width)
+                                let xEnd = xPosition(for: event.endTime, width: geometry.size.width)
 
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(analysisColor.opacity(0.18))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(analysisColor.opacity(0.55), lineWidth: 1)
-                                )
-                                .frame(width: max(8, xEnd - xStart), height: geometry.size.height - 18)
-                                .offset(x: xStart, y: 0)
-                        }
-
-                        HStack(alignment: .bottom, spacing: 2) {
-                            ForEach(Array(displaySamples.enumerated()), id: \.offset) { index, sample in
-                                RoundedRectangle(cornerRadius: 2)
-                                    .fill(barColor(for: sampleTime(for: index)))
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: max(10, (geometry.size.height - 26) * sample))
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(RSR.accent.opacity(0.18))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(RSR.accent.opacity(0.55), lineWidth: 1)
+                                    )
+                                    .frame(width: max(8, xEnd - xStart), height: geometry.size.height - 18)
+                                    .offset(x: xStart, y: 0)
                             }
+
+                            HStack(alignment: .bottom, spacing: 2) {
+                                ForEach(Array(displaySamples.enumerated()), id: \.offset) { index, sample in
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .fill(barColor(for: sampleTime(for: index)))
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: max(10, (geometry.size.height - 26) * sample))
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 10)
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 10)
                     }
+                    .frame(height: 140)
                 }
                 .frame(height: 140)
-            }
-            .frame(height: 140)
 
-            HStack {
-                Text("00:00")
-                Spacer()
-                Text(formattedTime(duration))
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
+                HStack {
+                    Text("00:00")
+                    Spacer()
+                    Text(formattedTime(duration))
+                }
+                .font(.rsrMeta)
+                .foregroundStyle(RSR.labelSecondary)
 
-            if !events.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
-                        HStack(spacing: 10) {
-                            markerBadge(index)
+                if !events.isEmpty {
+                    VStack(alignment: .leading, spacing: RSRSpace.sm) {
+                        Text("Events")
+                            .font(.rsrCaption)
+                            .tracking(RSRTracking.eyebrow)
+                            .foregroundStyle(RSR.labelSecondary)
+                            .textCase(.uppercase)
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(event.title)
-                                    .font(.caption.weight(.medium))
-                                    .foregroundStyle(.primary)
-
-                                Text(event.timeRange)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer()
-
-                            Text(confidenceText(for: event))
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
-                                .background(
-                                    Capsule()
-                                        .fill(Color.white.opacity(0.08))
-                                )
+                        ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
+                            RSREventCard(
+                                name: "\(index + 1). \(event.title)",
+                                timeRange: event.timeRange,
+                                confidence: event.confidence,
+                                isPrimary: index == 0
+                            )
                         }
                     }
+                } else {
+                    Text("No labeled events found.")
+                        .font(.rsrSubhead)
+                        .foregroundStyle(RSR.labelSecondary)
                 }
-            } else {
-                Text("No labeled events found.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(Color.white.opacity(0.06))
-        )
     }
 
     private var displaySamples: [Double] {
@@ -618,10 +602,10 @@ struct DetectionTimelineCard: View {
 
     private func barColor(for time: Double) -> Color {
         if events.contains(where: { time >= $0.startTime && time <= $0.endTime }) {
-            return analysisColor
+            return RSR.accent
         }
 
-        return .white.opacity(0.75)
+        return RSR.trackFill.opacity(0.95)
     }
 
     private func sampleTime(for index: Int) -> Double {
@@ -645,16 +629,12 @@ struct DetectionTimelineCard: View {
     private func markerBadge(_ index: Int) -> some View {
         return ZStack {
             Circle()
-                .fill(analysisColor)
+                .fill(RSR.accent)
                 .frame(width: 22, height: 22)
 
             Text("\(index + 1)")
                 .font(.caption2.weight(.bold))
-                .foregroundStyle(.black)
+                .foregroundStyle(.white)
         }
-    }
-
-    private func confidenceText(for event: DetectionEvent) -> String {
-        "\(Int((event.confidence * 100).rounded()))%"
     }
 }

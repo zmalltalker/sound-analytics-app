@@ -365,16 +365,16 @@ struct MicModeRow: View {
             HStack(spacing: 14) {
                 Image(systemName: mode.iconName)
                     .frame(width: 22)
-                    .foregroundStyle(isSelected ? .black : .cyan)
+                    .foregroundStyle(isSelected ? RSR.labelPrimary : RSR.accent)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(mode.rawValue)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(isSelected ? .black : .primary)
+                        .font(.rsrBody.weight(.semibold))
+                        .foregroundStyle(RSR.labelPrimary)
 
                     Text(mode.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(isSelected ? .black.opacity(0.65) : .secondary)
+                        .font(.rsrSubhead)
+                        .foregroundStyle(RSR.labelSecondary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -382,16 +382,19 @@ struct MicModeRow: View {
                 Spacer()
 
                 if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.black)
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(RSR.accent)
                 }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(isSelected ? Color.cyan : Color.white.opacity(0.07))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .rsrGlass(
+                .regular,
+                radius: RSRRadius.control,
+                fill: isSelected ? RSR.accentTint : RSR.surfaceGlass,
+                elevation: .card
             )
         }
         .buttonStyle(.plain)

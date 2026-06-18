@@ -14,73 +14,26 @@ struct ModelsWorkspaceView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: RSRSpace.lg) {
                 if let activeProject = appContext.activeProject {
-                    InstrumentCard {
-                        VStack(alignment: .leading, spacing: 14) {
-                            HStack {
-                                Text("Versions")
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-                                Spacer()
-                                Button(isEditing ? "Done" : "Edit") {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        isEditing.toggle()
-                                    }
-                                }
-                                .foregroundStyle(.secondary)
-                            }
-
-                            if let errorMessage {
-                                Text(errorMessage)
-                                    .font(.caption)
-                                    .foregroundStyle(.red)
-                            }
-
-                            if modelRows(for: activeProject.uid).isEmpty {
-                                Text("No model versions found for this project yet.")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                ForEach(modelRows(for: activeProject.uid)) { row in
-                                    modelRow(row, projectUID: activeProject.uid)
-                                }
-                            }
-                        }
-                    }
+                    header(for: activeProject)
+                    summaryCard(for: activeProject)
+                    versionsCard(for: activeProject)
 
                     if isEditing {
-                        Text("Removing deletes only the on-device copy and frees space. The trained version stays in the cloud — re-install any time.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 4)
+                        Text("Removing deletes only the on-device copy and frees space. The trained version stays in the cloud and can be re-installed any time.")
+                            .font(.rsrSubhead)
+                            .foregroundStyle(RSR.labelSecondary)
                     }
-
-                    Text("On device: \(appContext.activeProjectInstalledModels.count) versions · \(formattedStorage(appContext.activeProjectInstalledModels.reduce(0) { $0 + $1.sizeBytes }))")
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 4)
                 } else {
                     emptyProjectView
                 }
             }
-            .padding(20)
-            .padding(.top, 8)
-            .padding(.bottom, 80)
+            .padding(.horizontal, RSRSpace.screen)
+            .padding(.top, RSRSpace.card)
+            .padding(.bottom, 120)
         }
-        .background(Color.black.ignoresSafeArea())
-        .safeAreaInset(edge: .top) {
-            if let activeProject = appContext.activeProject {
-                ContextHeader(
-                    title: activeProject.name,
-                    subtitle: modelSubtitle(for: activeProject.uid),
-                    onSwitch: { showProjectSwitcher = true }
-                )
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
-                .background(Color.clear)
-            }
-        }
+        .background(RSR.canvas.ignoresSafeArea())
         .task(id: appContext.activeProjectUID) {
             guard let activeProjectUID = appContext.activeProjectUID else { return }
             await appContext.refreshAvailableModelVersions(for: activeProjectUID, force: true)
@@ -98,7 +51,7 @@ struct ModelsWorkspaceView: View {
         .overlay(alignment: .bottom) {
             if let installSuccessMessage {
                 SuccessToast(title: installSuccessMessage)
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, RSRSpace.screen)
                     .padding(.bottom, 96)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -109,19 +62,105 @@ struct ModelsWorkspaceView: View {
         }
     }
 
+    private func header(for activeProject: Project) -> some View {
+        HStack(alignment: .center) {
+            Text("Models")
+                .font(.rsrLargeTitle)
+                .tracking(RSRTracking.largeTitle)
+                .foregroundStyle(RSR.labelPrimary)
+
+            Spacer(minLength: 16)
+
+            RSRProjectChip(name: activeProject.name) {
+                showProjectSwitcher = true
+            }
+        }
+    }
+
+    private func summaryCard(for project: Project) -> some View {
+        RSRCard {
+            HStack(alignment: .top, spacing: RSRSpace.md) {
+                VStack(alignment: .leading, spacing: RSRSpace.xs) {
+                    Text("On device")
+                        .font(.rsrTitle)
+                        .tracking(RSRTracking.title)
+                        .foregroundStyle(RSR.labelPrimary)
+
+                    Text("\(appContext.activeProjectInstalledModels.count) versions · \(formattedStorage(appContext.activeProjectInstalledModels.reduce(0) { $0 + $1.sizeBytes }))")
+                        .font(.rsrMeta)
+                        .foregroundStyle(RSR.labelSecondary)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: RSRSpace.xs) {
+                    Text("Default")
+                        .font(.rsrCaption)
+                        .tracking(RSRTracking.eyebrow)
+                        .foregroundStyle(RSR.labelSecondary)
+
+                    Text(modelSubtitle(for: project.uid))
+                        .font(.rsrBody.weight(.semibold))
+                        .foregroundStyle(RSR.labelPrimary)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+        }
+    }
+
+    private func versionsCard(for project: Project) -> some View {
+        RSRCard {
+            VStack(alignment: .leading, spacing: RSRSpace.md) {
+                HStack {
+                    Text("Versions")
+                        .font(.rsrTitle)
+                        .tracking(RSRTracking.title)
+                        .foregroundStyle(RSR.labelPrimary)
+
+                    Spacer()
+
+                    RSRTonalButton(title: isEditing ? "Done" : "Edit") {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isEditing.toggle()
+                        }
+                    }
+                }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.rsrSubhead)
+                        .foregroundStyle(RSR.danger)
+                }
+
+                let rows = modelRows(for: project.uid)
+                if rows.isEmpty {
+                    Text("No model versions found for this project yet.")
+                        .font(.rsrSubhead)
+                        .foregroundStyle(RSR.labelSecondary)
+                } else {
+                    VStack(spacing: RSRSpace.sm) {
+                        ForEach(rows) { row in
+                            modelRow(row, projectUID: project.uid)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private var emptyProjectView: some View {
-        InstrumentCard {
+        RSRCard {
             Text("Create a project in Settings to manage model versions.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(.rsrSubhead)
+                .foregroundStyle(RSR.labelSecondary)
         }
     }
 
     private func modelSubtitle(for projectUID: String) -> String {
         if let defaultModel = appContext.defaultInstalledModel(for: projectUID) {
-            return "Default v\(defaultModel.version) · on device"
+            return "v\(defaultModel.version)"
         }
-        return "No default model selected"
+        return "None"
     }
 
     private func modelRows(for projectUID: String) -> [ProjectModelRowState] {
@@ -141,73 +180,92 @@ struct ModelsWorkspaceView: View {
             }
     }
 
-    @ViewBuilder
     private func modelRow(_ row: ProjectModelRowState, projectUID: String) -> some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
+        HStack(alignment: .center, spacing: RSRSpace.md) {
+            VStack(alignment: .leading, spacing: RSRSpace.sm) {
+                HStack(spacing: RSRSpace.sm) {
                     Text("v\(row.version)")
-                        .font(.headline.monospaced())
-                        .foregroundStyle(.primary)
+                        .font(.rsrBody.weight(.semibold))
+                        .foregroundStyle(RSR.labelPrimary)
 
-                    badge(row.installedModel == nil ? "CLOUD" : "ON DEVICE")
+                    modelBadge(row.installedModel == nil ? "Cloud" : "On device", tint: row.installedModel == nil ? RSR.labelSecondary : RSR.accent)
 
                     if row.isDefault {
-                        badge("DEFAULT", tint: Color(red: 0.41, green: 0.80, blue: 1.0))
-                    } else if isEditing, row.installedModel == nil {
-                        badge("NOT ON DEVICE")
+                        modelBadge("Default", tint: RSR.accent)
                     }
                 }
 
                 Text(modelDetailText(row))
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
+                    .font(.rsrMeta)
+                    .foregroundStyle(RSR.labelSecondary)
             }
 
-            Spacer()
+            Spacer(minLength: 12)
 
-            if isEditing, row.installedModel != nil {
-                Button(role: .destructive) {
-                    requestRemoval(for: row, projectUID: projectUID)
-                } label: {
-                    Image(systemName: "minus.circle.fill")
-                        .font(.title3)
-                }
-                .buttonStyle(.plain)
-            } else if row.installedModel == nil {
-                Button {
-                    install(version: row.version, for: projectUID)
-                } label: {
+            trailingAction(for: row, projectUID: projectUID)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .rsrGlass(.regular, radius: RSRRadius.control, fill: RSR.surfaceGlass, elevation: .card)
+        .opacity(isEditing && row.installedModel == nil ? 0.55 : 1)
+    }
+
+    @ViewBuilder
+    private func trailingAction(for row: ProjectModelRowState, projectUID: String) -> some View {
+        if isEditing, row.installedModel != nil {
+            Button(role: .destructive) {
+                requestRemoval(for: row, projectUID: projectUID)
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(RSR.danger)
+                    .frame(width: 36, height: 36)
+                    .background(
+                        Circle()
+                            .fill(RSR.danger.opacity(0.12))
+                    )
+            }
+            .buttonStyle(.plain)
+        } else if row.installedModel == nil {
+            Button {
+                install(version: row.version, for: projectUID)
+            } label: {
+                HStack(spacing: 8) {
                     if isInstallingVersion == row.version {
                         ProgressView()
-                            .tint(Color(red: 0.91, green: 0.47, blue: 0.32))
+                            .tint(RSR.accent)
                     } else {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle(Color(red: 0.91, green: 0.47, blue: 0.32))
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 16, weight: .semibold))
                     }
+
+                    Text(isInstallingVersion == row.version ? "Installing" : "Install")
+                        .font(.rsrSubhead.weight(.semibold))
                 }
-                .buttonStyle(.plain)
-            } else {
-                Button {
-                    if let version = row.installedModel?.version {
-                        appContext.setDefaultModelVersion(version, for: projectUID)
-                    }
-                } label: {
-                    Text(row.isDefault ? "★" : "☆")
-                        .font(.title3)
-                        .foregroundStyle(Color(red: 0.41, green: 0.80, blue: 1.0))
-                }
-                .buttonStyle(.plain)
-                .disabled(row.installedModel == nil)
+                .foregroundStyle(RSR.accent)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(RSR.accentTint)
+                .clipShape(RoundedRectangle(cornerRadius: RSRRadius.chip, style: .continuous))
             }
+            .buttonStyle(.plain)
+        } else {
+            Button {
+                if let version = row.installedModel?.version {
+                    appContext.setDefaultModelVersion(version, for: projectUID)
+                    AppHaptics.stepTick()
+                }
+            } label: {
+                Text(row.isDefault ? "Selected" : "Set default")
+                    .font(.rsrSubhead.weight(.semibold))
+                    .foregroundStyle(row.isDefault ? RSR.labelPrimary : RSR.accent)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .background(row.isDefault ? RSR.surfaceGlassStrong : RSR.accentTint)
+                    .clipShape(RoundedRectangle(cornerRadius: RSRRadius.chip, style: .continuous))
+            }
+            .buttonStyle(.plain)
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 18)
-                .fill(Color.white.opacity(0.05))
-        )
-        .opacity(isEditing && row.installedModel == nil ? 0.55 : 1)
     }
 
     private func install(version: String, for projectUID: String) {
@@ -249,9 +307,9 @@ struct ModelsWorkspaceView: View {
         return isEditing ? "Cloud only · not on device" : "Available in cloud"
     }
 
-    private func badge(_ title: String, tint: Color = .secondary) -> some View {
+    private func modelBadge(_ title: String, tint: Color) -> some View {
         Text(title)
-            .font(.caption2.monospaced())
+            .font(.rsrCaption)
             .foregroundStyle(tint)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)

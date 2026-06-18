@@ -9,31 +9,80 @@ struct SettingsWorkspaceView: View {
     @StateObject private var recordingSettingsStore = RecordingSettingsStore.shared
 
     var body: some View {
-        List {
-            Section("Account") {
-                Button {
-                    showProfileSheet = true
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(loginService.username ?? "Account")
-                                .foregroundStyle(.primary)
-                            Text("Signed in via Azure")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: RSRSpace.lg) {
+                headerSection
+                accountSection
+                setupSection
+                appSection
+            }
+            .padding(.horizontal, RSRSpace.screen)
+            .padding(.top, RSRSpace.card)
+            .padding(.bottom, 120)
+        }
+        .background(RSR.canvas.ignoresSafeArea())
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: RSRSpace.xs) {
+            Text("Settings")
+                .font(.rsrLargeTitle)
+                .tracking(RSRTracking.largeTitle)
+                .foregroundStyle(RSR.labelPrimary)
+
+            Text("Account, setup, and recording preferences.")
+                .font(.rsrSubhead)
+                .foregroundStyle(RSR.labelSecondary)
+        }
+    }
+
+    private var accountSection: some View {
+        VStack(alignment: .leading, spacing: RSRSpace.md) {
+            sectionTitle("Account")
+
+            Button {
+                showProfileSheet = true
+            } label: {
+                HStack(spacing: 14) {
+                    Circle()
+                        .fill(RSR.accentTint)
+                        .frame(width: 40, height: 40)
+                        .overlay {
+                            Image(systemName: "person.crop.circle.fill")
+                                .font(.system(size: 20, weight: .medium))
+                                .foregroundStyle(RSR.accent)
                         }
 
-                        Spacer()
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(loginService.username ?? "Account")
+                            .font(.rsrBody.weight(.semibold))
+                            .foregroundStyle(RSR.labelPrimary)
 
-                        Image(systemName: "chevron.right")
-                            .foregroundStyle(.secondary)
+                        Text("Signed in via Azure")
+                            .font(.rsrSubhead)
+                            .foregroundStyle(RSR.labelSecondary)
                     }
-                }
-                .buttonStyle(.plain)
-            }
-            .listRowBackground(Color.white.opacity(0.06))
 
-            Section("Setup") {
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(RSR.labelTertiary)
+                }
+                .padding(RSRSpace.card)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .rsrGlass(.regular, radius: RSRRadius.card, elevation: .card)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var setupSection: some View {
+        VStack(alignment: .leading, spacing: RSRSpace.md) {
+            sectionTitle("Setup")
+
+            VStack(spacing: RSRSpace.sm) {
                 NavigationLink {
                     ProjectsTab(
                         loginService: loginService,
@@ -41,8 +90,13 @@ struct SettingsWorkspaceView: View {
                         wrapInNavigation: false
                     )
                 } label: {
-                    settingsRow(title: "Projects", count: "\(appContext.projects.count)")
+                    RSRListRow(
+                        title: "Projects",
+                        subtitle: "\(appContext.projects.count) configured",
+                        systemImage: "folder"
+                    )
                 }
+                .buttonStyle(.plain)
 
                 NavigationLink {
                     LabelsTab(
@@ -51,55 +105,68 @@ struct SettingsWorkspaceView: View {
                         wrapInNavigation: false
                     )
                 } label: {
-                    settingsRow(title: "Labels", count: "\(appContext.labels.count)")
+                    RSRListRow(
+                        title: "Labels",
+                        subtitle: "\(appContext.labels.count) available",
+                        systemImage: "tag"
+                    )
                 }
+                .buttonStyle(.plain)
             }
-            .listRowBackground(Color.white.opacity(0.06))
+        }
+    }
 
-            Section("App") {
+    private var appSection: some View {
+        VStack(alignment: .leading, spacing: RSRSpace.md) {
+            sectionTitle("App")
+
+            VStack(spacing: RSRSpace.sm) {
                 NavigationLink {
                     RecordingSettingsScreen()
                 } label: {
-                    settingsRow(title: "Recording settings", detail: recordingSettingsStore.settings.summaryText)
+                    RSRListRow(
+                        title: "Recording settings",
+                        subtitle: recordingSettingsStore.settings.summaryText,
+                        systemImage: "waveform"
+                    )
                 }
+                .buttonStyle(.plain)
 
                 NavigationLink {
                     DesignSystemShowcaseView()
                 } label: {
-                    settingsRow(title: "Design system", detail: "Preview")
+                    RSRListRow(
+                        title: "Design system",
+                        subtitle: "Static component preview",
+                        systemImage: "paintpalette"
+                    )
                 }
+                .buttonStyle(.plain)
 
-                settingsRow(title: "Notifications", detail: "Not in scope")
+                RSRCard(radius: RSRRadius.control) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Notifications")
+                                .font(.rsrBody.weight(.semibold))
+                                .foregroundStyle(RSR.labelPrimary)
+
+                            Text("Not in scope")
+                                .font(.rsrSubhead)
+                                .foregroundStyle(RSR.labelSecondary)
+                        }
+
+                        Spacer()
+                    }
+                }
             }
-            .listRowBackground(Color.white.opacity(0.06))
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .background(Color.black.ignoresSafeArea())
-        .navigationTitle("Settings")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
     }
 
-    private func settingsRow(title: String, count: String? = nil, detail: String? = nil) -> some View {
-        HStack {
-            Text(title)
-                .foregroundStyle(.primary)
-
-            Spacer()
-
-            if let count {
-                Text(count)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-            }
-
-            if let detail {
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 4)
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.rsrCaption)
+            .tracking(RSRTracking.eyebrow)
+            .foregroundStyle(RSR.labelSecondary)
+            .textCase(.uppercase)
     }
 }

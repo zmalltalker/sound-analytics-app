@@ -376,97 +376,107 @@ struct ProfileSheet: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: RSRSpace.lg) {
+                    profileHeader
 
-                ScrollView {
-                    VStack(spacing: 32) {
-                        VStack(spacing: 12) {
-                            Image(systemName: "person.circle.fill")
-                                .font(.system(size: 72))
-                                .foregroundStyle(.cyan)
-
-                            if let username = loginService.username {
-                                Text(username)
-                                    .font(.title2.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                            }
-
-                            HStack(spacing: 6) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
-                                Text("Signed in")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .padding(.top, 20)
-
-                        if let tokenInfo = loginService.getTokenInfo() {
-                            VStack(alignment: .leading, spacing: 16) {
-                                Text("Keychain Data")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(.secondary)
-                                    .textCase(.uppercase)
-                                    .tracking(0.5)
-
-                                VStack(spacing: 12) {
-                                    InfoRow(label: "Username", value: tokenInfo.username ?? "Unknown")
-                                    InfoRow(label: "Account ID", value: tokenInfo.homeAccountId)
-                                    InfoRow(label: "Environment", value: tokenInfo.environment ?? "Unknown")
-                                    InfoRow(label: "Keychain Group", value: "ai.resonyx.ios-recorder")
-                                }
-                                .padding(16)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .fill(Color.white.opacity(0.06))
-                                )
-
-                                Text("Access tokens, refresh tokens, and ID tokens are securely stored in iOS Keychain")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                                    .multilineTextAlignment(.center)
-                            }
-                            .padding(.horizontal, 20)
-                        }
-
-                        Button {
-                            loginService.logout()
-                            dismiss()
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "rectangle.portrait.and.arrow.right")
-                                    .font(.title3)
-                                Text("Sign Out")
-                                    .font(.headline)
-                            }
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(Color.red.opacity(0.8))
-                            )
-                            .padding(.horizontal, 40)
-                        }
-                        .padding(.bottom, 40)
+                    if let tokenInfo = loginService.getTokenInfo() {
+                        tokenInfoCard(tokenInfo)
                     }
+
+                    signOutButton
                 }
+                .padding(.horizontal, RSRSpace.screen)
+                .padding(.top, RSRSpace.card)
+                .padding(.bottom, RSRSpace.lg)
             }
+            .background(RSR.canvas.ignoresSafeArea())
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
                         dismiss()
                     }
-                    .foregroundStyle(.cyan)
+                    .foregroundStyle(RSR.accent)
                 }
             }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    private var profileHeader: some View {
+        RSRCard {
+            VStack(spacing: RSRSpace.md) {
+                Circle()
+                    .fill(RSR.accentTint)
+                    .frame(width: 84, height: 84)
+                    .overlay {
+                        Image(systemName: "person.circle.fill")
+                            .font(.system(size: 48, weight: .medium))
+                            .foregroundStyle(RSR.accent)
+                    }
+
+                if let username = loginService.username {
+                    Text(username)
+                        .font(.rsrTitle)
+                        .tracking(RSRTracking.title)
+                        .foregroundStyle(RSR.labelPrimary)
+                        .multilineTextAlignment(.center)
+                }
+
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(RSR.success)
+                    Text("Signed in")
+                        .font(.rsrSubhead)
+                        .foregroundStyle(RSR.labelSecondary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func tokenInfoCard(_ tokenInfo: TokenInfo) -> some View {
+        RSRCard {
+            VStack(alignment: .leading, spacing: RSRSpace.md) {
+                Text("Keychain data")
+                    .font(.rsrCaption)
+                    .tracking(RSRTracking.eyebrow)
+                    .foregroundStyle(RSR.labelSecondary)
+                    .textCase(.uppercase)
+
+                VStack(spacing: RSRSpace.sm) {
+                    InfoRow(label: "Username", value: tokenInfo.username ?? "Unknown")
+                    InfoRow(label: "Account ID", value: tokenInfo.homeAccountId)
+                    InfoRow(label: "Environment", value: tokenInfo.environment ?? "Unknown")
+                    InfoRow(label: "Keychain Group", value: "ai.resonyx.ios-recorder")
+                }
+
+                Text("Access tokens, refresh tokens, and ID tokens are securely stored in iOS Keychain.")
+                    .font(.rsrSubhead)
+                    .foregroundStyle(RSR.labelSecondary)
+            }
+        }
+    }
+
+    private var signOutButton: some View {
+        Button {
+            loginService.logout()
+            dismiss()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "rectangle.portrait.and.arrow.right")
+                    .font(.system(size: 18, weight: .semibold))
+                Text("Sign out")
+                    .font(.rsrHeadline)
+            }
+            .foregroundStyle(RSR.danger)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .rsrGlass(.regular, radius: RSRRadius.control, fill: RSR.surfaceGlassStrong, elevation: .card)
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -477,11 +487,11 @@ struct InfoRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.rsrCaption)
+                .foregroundStyle(RSR.labelSecondary)
             Text(value)
-                .font(.caption.monospaced())
-                .foregroundStyle(.cyan)
+                .font(.rsrMeta)
+                .foregroundStyle(RSR.accent)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
