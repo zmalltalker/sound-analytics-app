@@ -9,6 +9,7 @@ final class AudioRecorder: ObservableObject {
     // MARK: - Published state
 
     @Published var isRecording      = false
+    @Published var isMonitoring     = false
     @Published var permissionDenied = false
     @Published var frequencyBands: [Float] = .init(repeating: 0, count: 32)
     @Published var inputLevel: Float = 0
@@ -34,11 +35,28 @@ final class AudioRecorder: ObservableObject {
     // MARK: - Recording lifecycle
 
     func start(settings: AudioSettings) {
+        startSession(settings: settings, writeToFile: true)
+    }
+
+    func startMonitoring(settings: AudioSettings) {
         guard !isRecording else { return }
+        guard !isMonitoring else { return }
+        startSession(settings: settings, writeToFile: false)
+    }
+
+    private func startSession(settings: AudioSettings, writeToFile: Bool) {
+        guard !(isRecording && writeToFile) else { return }
+        guard !(isMonitoring && !writeToFile) else { return }
+
+        if engine != nil {
+            stop(resetMeters: false, clearLastRecordingURL: false)
+        }
+
         errorMessage = nil
 
         do {
-            print("🎬 Starting recording with settings: \(settings)")
+            let sessionMode = writeToFile ? "recording" : "monitoring"
+            print("🎬 Starting \(sessionMode) with settings: \(settings)")
 
             // Configure the audio session with the chosen mic mode.
             let session = AVAudioSession.sharedInstance()
@@ -57,25 +75,26 @@ final class AudioRecorder: ObservableObject {
 
             print("🎵 Input format: \(inputFmt)")
 
-            let docs    = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let name    = "rec_\(Int(Date().timeIntervalSince1970)).\(settings.encoding.fileExtension)"
-            let fileURL = docs.appendingPathComponent(name)
+            if writeToFile {
+                let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                let name = "rec_\(Int(Date().timeIntervalSince1970)).\(settings.encoding.fileExtension)"
+                let fileURL = docs.appendingPathComponent(name)
 
-            print("📁 File URL: \(fileURL)")
-
-            // For PCM, write in the same format as the input to avoid conversion errors
-            print("📝 Creating audio file for encoding: \(settings.encoding.rawValue)")
-            if settings.encoding == .pcm {
-                print("   Using input format settings: \(inputFmt.settings)")
-                outputFile = try AVAudioFile(forWriting: fileURL, settings: inputFmt.settings)
+                print("📁 File URL: \(fileURL)")
+                print("📝 Creating audio file for encoding: \(settings.encoding.rawValue)")
+                if settings.encoding == .pcm {
+                    print("   Using input format settings: \(inputFmt.settings)")
+                    outputFile = try AVAudioFile(forWriting: fileURL, settings: inputFmt.settings)
+                } else {
+                    let fileSettings = settings.fileSettings(actualSampleRate: inputFmt.sampleRate)
+                    print("   Using custom settings: \(fileSettings)")
+                    outputFile = try AVAudioFile(forWriting: fileURL, settings: fileSettings)
+                }
+                print("✅ Audio file created successfully")
+                lastRecordingURL = fileURL
             } else {
-                // For compressed formats (AAC/ALAC), use custom settings
-                let fileSettings = settings.fileSettings(actualSampleRate: inputFmt.sampleRate)
-                print("   Using custom settings: \(fileSettings)")
-                outputFile = try AVAudioFile(forWriting: fileURL, settings: fileSettings)
+                outputFile = nil
             }
-            print("✅ Audio file created successfully")
-            lastRecordingURL = fileURL
 
             // Capture what we need from the main-actor context before entering the tap closure.
             let capturedSampleRate = inputFmt.sampleRate
@@ -83,7 +102,9 @@ final class AudioRecorder: ObservableObject {
             print("🔌 Installing tap...")
             inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFmt) { [weak self] buffer, _ in
                 // This closure runs on AVAudioEngine's internal thread.
-                try? self?.outputFile?.write(from: buffer)
+                if writeToFile {
+                    try? self?.outputFile?.write(from: buffer)
+                }
 
                 let (bands, level) = AudioRecorder.analyzeBuffer(buffer, sampleRate: capturedSampleRate)
 
@@ -99,9 +120,10 @@ final class AudioRecorder: ObservableObject {
             print("✅ Engine started")
 
             engine      = newEngine
-            isRecording = true
+            isRecording = writeToFile
+            isMonitoring = !writeToFile
 
-            print("🎉 Recording started successfully!")
+            print("🎉 \(sessionMode.capitalized) started successfully!")
 
         } catch {
             print("❌ ERROR: \(error)")
@@ -112,14 +134,29 @@ final class AudioRecorder: ObservableObject {
     }
 
     func stop() {
+        stop(resetMeters: true, clearLastRecordingURL: false)
+    }
+
+    func stopMonitoring() {
+        guard isMonitoring else { return }
+        stop(resetMeters: true, clearLastRecordingURL: false)
+    }
+
+    private func stop(resetMeters: Bool, clearLastRecordingURL: Bool) {
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         engine     = nil
         outputFile = nil
 
-        isRecording    = false
-        frequencyBands = .init(repeating: 0, count: 32)
-        inputLevel     = 0
+        isRecording = false
+        isMonitoring = false
+        if resetMeters {
+            frequencyBands = .init(repeating: 0, count: 32)
+            inputLevel = 0
+        }
+        if clearLastRecordingURL {
+            lastRecordingURL = nil
+        }
 
         try? AVAudioSession.sharedInstance().setActive(false)
     }

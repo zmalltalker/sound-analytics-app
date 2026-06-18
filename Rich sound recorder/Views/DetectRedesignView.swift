@@ -11,7 +11,7 @@ struct DetectWorkspaceView: View {
 
     @StateObject private var recorder = AudioRecorder()
     @StateObject private var recordingSettingsStore = RecordingSettingsStore.shared
-    @State private var phase: DetectPhase = .chooser
+    @State private var phase: DetectPhase = .ready
     @State private var selectedVersion: String?
     @State private var selectedRecording: CompletedRecording?
     @State private var selectedModel: InstalledProjectModel?
@@ -21,213 +21,313 @@ struct DetectWorkspaceView: View {
     @State private var detectionError: String?
     @State private var isRunningDetection = false
     @State private var recordingStartedAt: Date?
-    @State private var showSwitchConfirmation = false
+    @State private var shouldPulseListeningIndicator = false
 
     private let waveformLoader = WaveformLoader()
+    private let accentBlue = Color(red: 0.11, green: 0.53, blue: 0.98)
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if let activeProject = appContext.activeProject {
-                    switch phase {
-                    case .chooser:
-                        chooserView(for: activeProject.uid)
-                    case .listening:
-                        listeningView
-                    case .results:
-                        resultsView
-                    }
-                } else {
-                    InstrumentCard {
-                        Text("Create a project in Settings to start detection.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .padding(20)
-            .padding(.top, 8)
-            .padding(.bottom, 80)
-        }
-        .background(Color.black.ignoresSafeArea())
-        .safeAreaInset(edge: .top) {
+        ZStack {
+            immersiveBackground
+
             if let activeProject = appContext.activeProject {
-                ContextHeader(
-                    title: activeProject.name,
-                    subtitle: detectSubtitle(for: activeProject.uid),
-                    onSwitch: {
-                        if recorder.isRecording {
-                            showSwitchConfirmation = true
-                        } else {
-                            showProjectSwitcher = true
-                            phase = .chooser
-                        }
-                    }
-                )
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
-                .background(Color.clear)
+                if phase == .results {
+                    resultsContainer
+                } else {
+                    detectorSurface(for: activeProject)
+                }
+            } else {
+                emptyState
             }
         }
         .task {
             await recorder.requestPermission()
+            startMonitoringIfNeeded()
         }
         .task(id: appContext.activeProjectUID) {
             if let activeProjectUID = appContext.activeProjectUID {
                 await appContext.refreshAvailableModelVersions(for: activeProjectUID, force: false)
                 selectedVersion = appContext.defaultInstalledModel(for: activeProjectUID)?.version
             }
-            phase = .chooser
+            phase = .ready
+            selectedRecording = nil
+            results = []
+            detectionError = nil
+            waveformError = nil
+            startMonitoringIfNeeded()
         }
-        .alert("Stop detection and switch project?", isPresented: $showSwitchConfirmation) {
-            Button("Cancel", role: .cancel) {}
-            Button("Stop and Switch") {
-                if recorder.isRecording {
-                    recorder.stop()
-                }
-                phase = .chooser
-                showProjectSwitcher = true
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                shouldPulseListeningIndicator = true
             }
-        } message: {
-            Text("Changing project ends the current detection session before you switch models.")
         }
-    }
-
-    private func chooserView(for projectUID: String) -> some View {
-        let installedModels = appContext.activeProjectInstalledModels
-
-        return InstrumentCard {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("DETECT WITH")
-                    .font(.caption.monospaced())
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-
-                if installedModels.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("No models installed for this project")
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-                        Text("Install one in Models or train a new version first.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-
-                        HStack(spacing: 12) {
-                            Button("Open Models", action: onOpenModels)
-                                .font(.subheadline.weight(.semibold))
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 10)
-                                .buttonStyle(TintedActionButtonStyle(tint: Color(red: 0.91, green: 0.47, blue: 0.32)))
-
-                            Button("Open Train", action: onOpenTrain)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 10)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 14)
-                                        .fill(Color.white.opacity(0.06))
-                                )
-                        }
-                    }
-                } else {
-                    ForEach(installedModels) { model in
-                        Button {
-                            selectedVersion = model.version
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: selectedVersion == model.version ? "largecircle.fill.circle" : "circle")
-                                    .foregroundStyle(selectedVersion == model.version ? Color(red: 0.41, green: 0.80, blue: 1.0) : .secondary)
-
-                                VStack(alignment: .leading, spacing: 6) {
-                                    HStack(spacing: 6) {
-                                        Text("Version \(model.version)")
-                                            .font(.headline)
-                                            .foregroundStyle(.primary)
-                                        if appContext.defaultModelVersionsByProject[projectUID] == model.version {
-                                            Text("★")
-                                                .foregroundStyle(Color(red: 0.41, green: 0.80, blue: 1.0))
-                                        }
-                                    }
-                                    Text("\(model.labelCount) labels · \(formattedStorage(model.sizeBytes))")
-                                        .font(.caption.monospaced())
-                                        .foregroundStyle(.secondary)
-                                }
-
-                                Spacer()
-                            }
-                            .padding(16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 18)
-                                    .fill(selectedVersion == model.version ? Color(red: 0.41, green: 0.80, blue: 1.0).opacity(0.12) : Color.white.opacity(0.05))
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    Text("Showing versions of \(appContext.activeProject?.name ?? "this project") installed on this device. Switch project in the header to detect with another.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Button {
-                        startListening(projectUID: projectUID)
-                    } label: {
-                        Text("Start detecting")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                    }
-                    .buttonStyle(TintedActionButtonStyle(tint: Color(red: 0.91, green: 0.47, blue: 0.32)))
-                    .disabled(selectedVersion == nil)
-                }
+        .onDisappear {
+            if recorder.isRecording {
+                recorder.stop()
+            } else {
+                recorder.stopMonitoring()
             }
         }
     }
 
-    private var listeningView: some View {
-        InstrumentCard {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Text("● Listening")
+    private var immersiveBackground: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.03, green: 0.05, blue: 0.09),
+                    Color.black
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            RadialGradient(
+                colors: [
+                    Color(red: 0.05, green: 0.14, blue: 0.27).opacity(0.9),
+                    Color(red: 0.03, green: 0.07, blue: 0.12).opacity(0.5),
+                    .clear
+                ],
+                center: .center,
+                startRadius: 20,
+                endRadius: 360
+            )
+            .blur(radius: 8)
+        }
+        .ignoresSafeArea()
+    }
+
+    private func detectorSurface(for activeProject: Project) -> some View {
+        GeometryReader { geo in
+            VStack(alignment: .leading, spacing: 18) {
+                header(for: activeProject)
+                modelSelector(for: activeProject.uid)
+
+                VStack(spacing: 10) {
+                    statusBadge
+                    timerLabel
+                    waveformSection
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 10)
+
+                Spacer(minLength: 0)
+
+                primaryActionButton(for: activeProject.uid)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            .padding(.bottom, max(110, geo.safeAreaInsets.bottom + 84))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+
+    private func header(for activeProject: Project) -> some View {
+        HStack(alignment: .center) {
+            Text("Detect")
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+
+            Spacer(minLength: 16)
+
+            Button {} label: {
+                HStack(spacing: 10) {
+                    Text(activeProject.name)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+
+                    Image(systemName: "chevron.right")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.white.opacity(0.4))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(
+                    Capsule()
+                        .fill(Color.white.opacity(0.08))
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func modelSelector(for projectUID: String) -> some View {
+        let currentModel = selectedModelForDisplay(projectUID: projectUID)
+
+        return Button {} label: {
+            HStack(spacing: 16) {
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(accentBlue, lineWidth: 2)
+                    .frame(width: 24, height: 24)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 3)
+                            .stroke(accentBlue, lineWidth: 2)
+                            .frame(width: 24, height: 9)
+                    )
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(selectedModelTitle(for: projectUID, model: currentModel))
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+
+                    Text(modelSubtitle(for: projectUID, model: currentModel))
+                        .font(.subheadline.weight(.regular))
+                        .foregroundStyle(Color.white.opacity(0.5))
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(Color.white.opacity(0.4))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(Color.white.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var statusBadge: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(accentBlue.opacity(0.18))
+                    .frame(width: 28, height: 28)
+                    .scaleEffect(recorder.isRecording && shouldPulseListeningIndicator ? 1.2 : 0.95)
+                    .opacity(recorder.isRecording && shouldPulseListeningIndicator ? 0.95 : 0.45)
+
+                Circle()
+                    .fill(phase == .listening ? accentBlue : Color.white.opacity(0.38))
+                    .frame(width: 16, height: 16)
+            }
+
+            Text(phase == .listening ? "LISTENING" : "READY")
+                .font(.headline.weight(.bold))
+                .tracking(1.0)
+                .foregroundStyle(phase == .listening ? accentBlue : Color.white.opacity(0.45))
+        }
+    }
+
+    private var timerLabel: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            Text(formattedElapsedTime(referenceDate: context.date))
+                .font(.system(size: 72, weight: .ultraLight, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .contentTransition(.numericText())
+        }
+    }
+
+    private var waveformSection: some View {
+        SpectrumView(
+            bands: recorder.frequencyBands,
+            style: .mirroredBars,
+            tint: accentBlue
+        )
+        .frame(height: 220)
+        .padding(.horizontal, 14)
+        .opacity(recorder.permissionDenied ? 0.25 : 1)
+        .overlay {
+            if recorder.permissionDenied {
+                VStack(spacing: 12) {
+                    Image(systemName: "mic.slash.fill")
+                        .font(.system(size: 34, weight: .semibold))
+                        .foregroundStyle(.orange)
+
+                    Text("Microphone access is required.")
                         .font(.headline)
-                        .foregroundStyle(Color(red: 0.91, green: 0.47, blue: 0.32))
-                    Spacer()
-                    Text(elapsedRecordingTime)
-                        .font(.title3.monospacedDigit().weight(.bold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.white)
                 }
-
-                SpectrumView(bands: recorder.frequencyBands)
-                    .frame(height: 110)
-                    .background(Color.white.opacity(0.04))
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(Color.white.opacity(0.08))
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(Color(red: 0.91, green: 0.47, blue: 0.32))
-                            .frame(width: max(6, geo.size.width * CGFloat(recorder.inputLevel)))
-                    }
-                }
-                .frame(height: 10)
-
-                Text("Tap stop to see detected events")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Button {
-                    stopListening()
-                } label: {
-                    Text("Stop")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                }
-                .buttonStyle(TintedActionButtonStyle(tint: Color(red: 0.91, green: 0.47, blue: 0.32)))
             }
         }
+    }
+
+    private func primaryActionButton(for projectUID: String) -> some View {
+        Button {
+            if recorder.isRecording {
+                stopListening()
+            } else {
+                startListening(projectUID: projectUID)
+            }
+        } label: {
+            HStack(spacing: 16) {
+                ZStack {
+                    if recorder.isRecording {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color(red: 1.0, green: 0.32, blue: 0.26))
+                            .frame(width: 34, height: 34)
+                            .shadow(color: Color.red.opacity(0.45), radius: 16)
+                    } else {
+                        Circle()
+                            .fill(accentBlue)
+                            .frame(width: 14, height: 14)
+                    }
+                }
+                .frame(width: 40, height: 40)
+
+                Text(recorder.isRecording ? "Stop & analyze" : "Start detection")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.white)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 18)
+            .background(
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(Color.white.opacity(0.12))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(!canStartDetection(projectUID: projectUID) && !recorder.isRecording)
+    }
+
+    private var resultsContainer: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                if let activeProject = appContext.activeProject {
+                    header(for: activeProject)
+                }
+
+                resultsView
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            .padding(.bottom, 110)
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Detect")
+                .font(.system(size: 40, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+
+            InstrumentCard {
+                Text("Create a project in Settings to start detection.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var resultsView: some View {
@@ -247,18 +347,15 @@ struct DetectWorkspaceView: View {
                 Spacer()
 
                 Button {
-                    if let projectUID = appContext.activeProjectUID {
-                        startListening(projectUID: projectUID)
-                    } else {
-                        phase = .chooser
-                    }
+                    phase = .ready
+                    startMonitoringIfNeeded()
                 } label: {
-                    Text("Record again")
+                    Text("Back to detect")
                         .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                 }
-                .buttonStyle(TintedActionButtonStyle(tint: Color(red: 0.91, green: 0.47, blue: 0.32)))
+                .buttonStyle(TintedActionButtonStyle(tint: accentBlue))
             }
 
             if let selectedRecording {
@@ -279,6 +376,11 @@ struct DetectWorkspaceView: View {
                 Text(detectionError)
                     .font(.caption)
                     .foregroundStyle(.red)
+            }
+
+            if isRunningDetection {
+                ProgressView("Analyzing recording...")
+                    .tint(accentBlue)
             }
         }
     }
@@ -365,22 +467,57 @@ struct DetectWorkspaceView: View {
         }
     }
 
-    private func detectSubtitle(for projectUID: String) -> String {
-        if let selectedVersion {
-            return "v\(selectedVersion) · on device"
-        }
-
-        if let defaultModel = appContext.defaultInstalledModel(for: projectUID) {
-            return "v\(defaultModel.version) · on device"
-        }
-
-        return "Choose a version"
+    private func startMonitoringIfNeeded() {
+        guard phase != .results else { return }
+        guard !recorder.isRecording else { return }
+        recorder.refreshPermission()
+        guard !recorder.permissionDenied else { return }
+        recorder.startMonitoring(settings: recordingSettingsStore.settings)
     }
 
-    private var elapsedRecordingTime: String {
-        guard let recordingStartedAt else { return "00:00" }
-        let elapsed = max(0, Int(Date().timeIntervalSince(recordingStartedAt)))
-        return String(format: "%02d:%02d", elapsed / 60, elapsed % 60)
+    private func selectedModelForDisplay(projectUID: String) -> InstalledProjectModel? {
+        if let selectedVersion,
+           let match = appContext.installedModels.first(where: { $0.projectUID == projectUID && $0.version == selectedVersion }) {
+            return match
+        }
+
+        return appContext.defaultInstalledModel(for: projectUID)
+    }
+
+    private func selectedModelTitle(for projectUID: String, model: InstalledProjectModel?) -> String {
+        if let model {
+            return "Model v\(model.version)"
+        }
+        if let version = selectedVersion {
+            return "Model v\(version)"
+        }
+        if let defaultModel = appContext.defaultInstalledModel(for: projectUID) {
+            return "Model v\(defaultModel.version)"
+        }
+        return "Choose model"
+    }
+
+    private func modelSubtitle(for projectUID: String, model: InstalledProjectModel?) -> String {
+        guard let model else {
+            return "No model installed"
+        }
+
+        let isDefault = appContext.defaultModelVersionsByProject[projectUID] == model.version
+        let defaultText = isDefault ? "Default" : "Installed"
+        return "\(defaultText) · \(model.labelCount) labels · on device"
+    }
+
+    private func canStartDetection(projectUID: String) -> Bool {
+        appContext.selectedOrOnlyInstalledModel(for: projectUID, selectedVersion: selectedVersion) != nil
+    }
+
+    private func formattedElapsedTime(referenceDate: Date) -> String {
+        guard phase == .listening, let recordingStartedAt else {
+            return "0:00"
+        }
+
+        let elapsed = max(0, Int(referenceDate.timeIntervalSince(recordingStartedAt)))
+        return "\(elapsed / 60):" + String(format: "%02d", elapsed % 60)
     }
 
     private func recordingDuration(for fileURL: URL, fallbackStartDate: Date, endDate: Date) -> Double {
@@ -399,7 +536,7 @@ struct DetectWorkspaceView: View {
 }
 
 private enum DetectPhase {
-    case chooser
+    case ready
     case listening
     case results
 }
