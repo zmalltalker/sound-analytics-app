@@ -232,3 +232,66 @@ struct ProjectSwitcherSheet: View {
         return labelsCount == 0 ? "0 labels · not ready" : "\(labelsCount) labels · not ready"
     }
 }
+
+struct DetectModelSelectorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let models: [InstalledProjectModel]
+    let selectedVersion: String?
+    let onSelect: (InstalledProjectModel) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if models.isEmpty {
+                    Text("No on-device models available for this project.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .listRowBackground(Color.white.opacity(0.06))
+                } else {
+                    ForEach(models) { model in
+                        Button {
+                            onSelect(model)
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: selectedVersion == model.version ? "largecircle.fill.circle" : "circle")
+                                    .foregroundStyle(selectedVersion == model.version ? Color(red: 0.41, green: 0.80, blue: 1.0) : .secondary)
+
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Model v\(model.version)")
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(.primary)
+
+                                    Text(modelMetadata(for: model))
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+                            }
+                            .padding(.vertical, 6)
+                        }
+                        .buttonStyle(.plain)
+                        .listRowBackground(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(selectedVersion == model.version ? Color(red: 0.41, green: 0.80, blue: 1.0).opacity(0.12) : Color.white.opacity(0.06))
+                        )
+                    }
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle("Select Model")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .presentationDetents([.medium, .large])
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func modelMetadata(for model: InstalledProjectModel) -> String {
+        let modifiedText = model.modifiedAt?.formatted(date: .abbreviated, time: .omitted) ?? "On device"
+        return "\(modifiedText) · \(model.labelCount) labels · \(formattedStorage(model.sizeBytes))"
+    }
+}

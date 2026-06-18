@@ -22,6 +22,7 @@ struct DetectWorkspaceView: View {
     @State private var isRunningDetection = false
     @State private var recordingStartedAt: Date?
     @State private var shouldPulseListeningIndicator = false
+    @State private var showModelSelectorSheet = false
 
     private let waveformLoader = WaveformLoader()
     private let accentBlue = Color(red: 0.11, green: 0.53, blue: 0.98)
@@ -66,6 +67,16 @@ struct DetectWorkspaceView: View {
                 recorder.stop()
             } else {
                 recorder.stopMonitoring()
+            }
+        }
+        .sheet(isPresented: $showModelSelectorSheet) {
+            DetectModelSelectorSheet(
+                models: appContext.activeProjectInstalledModels,
+                selectedVersion: selectedVersion
+            ) { model in
+                selectedVersion = model.version
+                selectedModel = model
+                AppHaptics.success()
             }
         }
     }
@@ -129,7 +140,9 @@ struct DetectWorkspaceView: View {
 
             Spacer(minLength: 16)
 
-            Button {} label: {
+            Button {
+                showProjectSwitcher = true
+            } label: {
                 HStack(spacing: 10) {
                     Text(activeProject.name)
                         .font(.headline.weight(.semibold))
@@ -158,7 +171,9 @@ struct DetectWorkspaceView: View {
     private func modelSelector(for projectUID: String) -> some View {
         let currentModel = selectedModelForDisplay(projectUID: projectUID)
 
-        return Button {} label: {
+        return Button {
+            showModelSelectorSheet = true
+        } label: {
             HStack(spacing: 16) {
                 RoundedRectangle(cornerRadius: 6)
                     .stroke(accentBlue, lineWidth: 2)
