@@ -5,6 +5,7 @@ struct HomeLaunchView: View {
 
     @Binding var selectedSection: AppSection
     @Binding var showingHome: Bool
+    @Binding var trainRecorderPresentationToken: Int
     @Binding var showProjectSwitcher: Bool
     let onOpenProjects: () -> Void
 
@@ -49,6 +50,7 @@ struct HomeLaunchView: View {
                 ) {
                     selectedSection = .train
                     showingHome = false
+                    trainRecorderPresentationToken += 1
                 }
 
                 taskRow(

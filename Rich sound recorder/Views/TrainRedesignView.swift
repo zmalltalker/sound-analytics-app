@@ -6,6 +6,7 @@ struct TrainWorkspaceView: View {
 
     let loginService: AuthenticationService
     @Binding var showProjectSwitcher: Bool
+    let presentRecorderToken: Int
     let onViewModels: () -> Void
     let onOpenLabels: () -> Void
     let onLeaveRunning: () -> Void
@@ -36,12 +37,14 @@ struct TrainWorkspaceView: View {
     init(
         loginService: AuthenticationService,
         showProjectSwitcher: Binding<Bool>,
+        presentRecorderToken: Int,
         onViewModels: @escaping () -> Void,
         onOpenLabels: @escaping () -> Void,
         onLeaveRunning: @escaping () -> Void
     ) {
         self.loginService = loginService
         _showProjectSwitcher = showProjectSwitcher
+        self.presentRecorderToken = presentRecorderToken
         self.onViewModels = onViewModels
         self.onOpenLabels = onOpenLabels
         self.onLeaveRunning = onLeaveRunning
@@ -137,6 +140,11 @@ struct TrainWorkspaceView: View {
                 _ = try? await appContext.modelSpecs(projectUID: activeProject.uid, version: latestVersion)
             }
         }
+        .task(id: presentRecorderToken) {
+            guard presentRecorderToken > 0 else { return }
+            guard appContext.activeProject != nil else { return }
+            presentRecordingView()
+        }
         .task(id: appContext.trainingRequestUID) {
             stageTrainingSequenceIfNeeded()
         }
@@ -188,12 +196,12 @@ struct TrainWorkspaceView: View {
 
                         if let actionTitle = item.actionTitle {
                             Button(actionTitle) {
-                            if actionTitle == "Add" {
-                                showRecordingView = true
-                            } else if actionTitle == "Setup" {
-                                onOpenLabels()
+                                if actionTitle == "Add" {
+                                    presentRecordingView()
+                                } else if actionTitle == "Setup" {
+                                    onOpenLabels()
+                                }
                             }
-                        }
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(Color(red: 0.41, green: 0.80, blue: 1.0))
                         }
@@ -202,7 +210,7 @@ struct TrainWorkspaceView: View {
 
                 HStack(spacing: 12) {
                     Button {
-                        showRecordingView = true
+                        presentRecordingView()
                     } label: {
                         Text("Record audio")
                             .font(.headline)
@@ -479,6 +487,17 @@ struct TrainWorkspaceView: View {
     private func startTraining(for project: Project) {
         Task {
             await appContext.startTraining(for: project.uid)
+        }
+    }
+
+    private func presentRecordingView() {
+        if showRecordingView {
+            showRecordingView = false
+            DispatchQueue.main.async {
+                showRecordingView = true
+            }
+        } else {
+            showRecordingView = true
         }
     }
 

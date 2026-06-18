@@ -274,8 +274,10 @@ struct DetectWorkspaceView: View {
     private func primaryActionButton(for projectUID: String) -> some View {
         Button {
             if recorder.isRecording {
+                AppHaptics.success()
                 stopListening()
             } else {
+                AppHaptics.stepTick()
                 startListening(projectUID: projectUID)
             }
         } label: {
@@ -419,9 +421,6 @@ struct DetectWorkspaceView: View {
         selectedRecording = nil
         recordingStartedAt = Date()
         recorder.start(settings: recordingSettingsStore.settings)
-        if recorder.isRecording {
-            AppHaptics.stepTick()
-        }
         phase = .listening
     }
 
