@@ -6,7 +6,6 @@ struct MainView: View {
 
     @State private var appContext: RedesignAppContext
     @State private var selectedSection: AppSection = .train
-    @State private var showingHome = true
     @State private var showProjectSwitcher = false
     @State private var showProfileSheet = false
     @State private var setupDestination: SetupDestination?
@@ -26,24 +25,10 @@ struct MainView: View {
             ZStack(alignment: .bottom) {
                 Color.black.ignoresSafeArea()
 
-                Group {
-                    if showingHome {
-                        HomeLaunchView(
-                            selectedSection: $selectedSection,
-                            showingHome: $showingHome,
-                            showProjectSwitcher: $showProjectSwitcher,
-                            onOpenProjects: openProjectsSetup
-                        )
-                    } else {
-                        activeSectionView
-                    }
-                }
+                activeSectionView
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                AppSectionBar(
-                    selectedSection: $selectedSection,
-                    showingHome: $showingHome
-                )
+                AppSectionBar(selectedSection: $selectedSection)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
             }
@@ -88,22 +73,19 @@ struct MainView: View {
                 loginService: loginService,
                 showProjectSwitcher: $showProjectSwitcher,
                 onViewModels: {
-                    showingHome = false
                     selectedSection = .models
                 },
                 onOpenLabels: openLabelsSetup,
-                onLeaveRunning: { showingHome = true }
+                onLeaveRunning: {}
             )
         case .detect:
             DetectWorkspaceView(
                 detectionService: detectionService,
                 showProjectSwitcher: $showProjectSwitcher,
                 onOpenModels: {
-                    showingHome = false
                     selectedSection = .models
                 },
                 onOpenTrain: {
-                    showingHome = false
                     selectedSection = .train
                 }
             )
@@ -119,13 +101,11 @@ struct MainView: View {
     }
 
     private func openProjectsSetup() {
-        showingHome = false
         selectedSection = .settings
         setupDestination = .projects
     }
 
     private func openLabelsSetup() {
-        showingHome = false
         selectedSection = .settings
         setupDestination = .labels
     }
@@ -135,7 +115,6 @@ private struct AppSectionBar: View {
     private let sections: [AppSection] = [.train, .detect, .models, .settings]
 
     @Binding var selectedSection: AppSection
-    @Binding var showingHome: Bool
 
     var body: some View {
         HStack(spacing: 6) {
@@ -160,7 +139,6 @@ private struct AppSectionBar: View {
 
         return Button {
             selectedSection = section
-            showingHome = false
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: systemImage(for: section))

@@ -29,6 +29,7 @@ struct TrainWorkspaceView: View {
     @State private var installSuccessToken = 0
     @State private var displayedTrainingStepIndex = 0
     @State private var isHoldingCompletedTrainingState = false
+    @State private var isLoadingTrainingReadiness = false
     @State private var trainingStepTask: Task<Void, Never>?
     @State private var stagedTrainingRequestUID: String?
     @State private var failedTrainingHapticRequestUID: String?
@@ -65,7 +66,8 @@ struct TrainWorkspaceView: View {
                             for: activeProject,
                             projectLabels: projectLabels,
                             readyLabels: readyLabels,
-                            isReady: isReady
+                            isReady: isReady,
+                            isLoading: isLoadingTrainingReadiness
                         )
 
                         if appContext.trainingProjectUID == activeProject.uid,
@@ -118,8 +120,17 @@ struct TrainWorkspaceView: View {
                 onUpload: { uploadPendingRecording() }
             )
         }
-        .task(id: appContext.activeProjectUID) {
+        .task(id: appContext.activeProject?.uid) {
             guard let activeProject = appContext.activeProject else { return }
+            isLoadingTrainingReadiness = true
+            labelRecordingCounts = [:]
+
+            defer {
+                if appContext.activeProjectUID == activeProject.uid {
+                    isLoadingTrainingReadiness = false
+                }
+            }
+
             await appContext.refreshAvailableModelVersions(for: activeProject.uid, force: true)
             await loadRecordingCounts(for: activeProject)
             if appContext.trainingProjectUID == activeProject.uid, appContext.trainingRequestUID != nil {
@@ -220,7 +231,8 @@ struct TrainWorkspaceView: View {
         for project: Project,
         projectLabels: [RecorderLabel],
         readyLabels: [RecorderLabel],
-        isReady: Bool
+        isReady: Bool,
+        isLoading: Bool
     ) -> some View {
         let labelRows = readinessLabelRows(for: projectLabels)
         let totalClips = labelRows.reduce(0) { $0 + $1.clipCount }
@@ -230,20 +242,30 @@ struct TrainWorkspaceView: View {
             HStack(alignment: .top, spacing: 14) {
                 ZStack {
                     Circle()
-                        .fill((isReady ? Color.green : Color.orange).opacity(0.22))
+                        .fill((isLoading ? Color.white.opacity(0.18) : (isReady ? Color.green : Color.orange).opacity(0.22)))
                         .frame(width: 58, height: 58)
 
-                    Image(systemName: isReady ? "checkmark" : "exclamationmark")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(isReady ? Color.green.opacity(0.95) : Color.orange)
+                    if isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white.opacity(0.85))
+                    } else {
+                        Image(systemName: isReady ? "checkmark" : "exclamationmark")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(isReady ? Color.green.opacity(0.95) : Color.orange)
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(isReady ? "Ready to train" : "Keep collecting audio")
+                    Text(isLoading ? "Loading training status" : (isReady ? "Ready to train" : "Keep collecting audio"))
                         .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
 
-                    Text("\(labelsWithAudio) of \(projectLabels.count) labels have audio · \(totalClips) clips")
+                    Text(
+                        isLoading
+                        ? "Checking labels and clip counts..."
+                        : "\(labelsWithAudio) of \(projectLabels.count) labels have audio · \(totalClips) clips"
+                    )
                         .font(.caption.weight(.regular))
                         .foregroundStyle(Color.white.opacity(0.55))
                 }
@@ -253,8 +275,14 @@ struct TrainWorkspaceView: View {
                 .overlay(Color.white.opacity(0.08))
 
             VStack(spacing: 12) {
-                ForEach(labelRows) { row in
-                    readinessRow(row, maxClipCount: labelRows.map(\.clipCount).max() ?? 1)
+                if isLoading {
+                    ForEach(Array(projectLabels.prefix(4))) { label in
+                        readinessLoadingRow(labelName: label.name)
+                    }
+                } else {
+                    ForEach(labelRows) { row in
+                        readinessRow(row, maxClipCount: labelRows.map(\.clipCount).max() ?? 1)
+                    }
                 }
             }
         }
@@ -302,6 +330,37 @@ struct TrainWorkspaceView: View {
                     .foregroundStyle(Color.orange)
             }
         }
+    }
+
+    private func readinessLoadingRow(labelName: String) -> some View {
+        HStack(spacing: 14) {
+            Circle()
+                .fill(Color.white.opacity(0.16))
+                .frame(width: 12, height: 12)
+
+            Text(labelName)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.white.opacity(0.55))
+                .lineLimit(1)
+
+            Spacer(minLength: 12)
+
+            Capsule()
+                .fill(Color.white.opacity(0.12))
+                .frame(width: 96, height: 9)
+                .overlay(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.22))
+                        .frame(width: 44, height: 9)
+                }
+
+            Text("...")
+                .font(.system(size: 14, weight: .regular, design: .rounded))
+                .foregroundStyle(Color.white.opacity(0.4))
+                .frame(width: 24, alignment: .trailing)
+        }
+        .redacted(reason: .placeholder)
+        .allowsHitTesting(false)
     }
 
     private func trainingActionButton(for project: Project, isReady: Bool) -> some View {
