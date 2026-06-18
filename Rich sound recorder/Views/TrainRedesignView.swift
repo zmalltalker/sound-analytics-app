@@ -6,7 +6,6 @@ struct TrainWorkspaceView: View {
 
     let loginService: AuthenticationService
     @Binding var showProjectSwitcher: Bool
-    let presentRecorderToken: Int
     let onViewModels: () -> Void
     let onOpenLabels: () -> Void
     let onLeaveRunning: () -> Void
@@ -37,14 +36,12 @@ struct TrainWorkspaceView: View {
     init(
         loginService: AuthenticationService,
         showProjectSwitcher: Binding<Bool>,
-        presentRecorderToken: Int,
         onViewModels: @escaping () -> Void,
         onOpenLabels: @escaping () -> Void,
         onLeaveRunning: @escaping () -> Void
     ) {
         self.loginService = loginService
         _showProjectSwitcher = showProjectSwitcher
-        self.presentRecorderToken = presentRecorderToken
         self.onViewModels = onViewModels
         self.onOpenLabels = onOpenLabels
         self.onLeaveRunning = onLeaveRunning
@@ -54,56 +51,48 @@ struct TrainWorkspaceView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if let activeProject = appContext.activeProject {
-                    let projectLabels = appContext.projectLabels(for: activeProject)
-                    let readyLabels = projectLabels.filter { (labelRecordingCounts[$0.uid] ?? 0) > 0 }
-                    let isReady = projectLabels.count >= 2 && readyLabels.count >= 2
+        GeometryReader { geo in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let activeProject = appContext.activeProject {
+                        let projectLabels = appContext.projectLabels(for: activeProject)
+                        let readyLabels = projectLabels.filter { (labelRecordingCounts[$0.uid] ?? 0) > 0 }
+                        let isReady = projectLabels.count >= 2 && readyLabels.count >= 2
 
-                    readinessCard(
-                        for: activeProject,
-                        projectLabels: projectLabels,
-                        readyLabels: readyLabels,
-                        isReady: isReady
-                    )
+                        trainHeader
+                        activeProjectCard(for: activeProject)
+                        readinessSummaryCard(
+                            for: activeProject,
+                            projectLabels: projectLabels,
+                            readyLabels: readyLabels,
+                            isReady: isReady
+                        )
 
-                    modelVersionsCard(for: activeProject, isReady: isReady)
+                        if appContext.trainingProjectUID == activeProject.uid,
+                           (appContext.isTrainingInProgress || isHoldingCompletedTrainingState) {
+                            trainingProgressCard
+                        } else if appContext.trainingProjectUID == activeProject.uid, trainingDidFail {
+                            trainingFailureCard(for: activeProject)
+                        } else {
+                            trainingActionButton(for: activeProject, isReady: isReady)
+                        }
 
-                    if appContext.trainingProjectUID == activeProject.uid,
-                       (appContext.isTrainingInProgress || isHoldingCompletedTrainingState) {
-                        trainingProgressCard
-                    } else if appContext.trainingProjectUID == activeProject.uid, trainingDidFail {
-                        trainingFailureCard(for: activeProject)
-                    } else if let latestVersion = appContext.latestKnownVersion(for: activeProject.uid),
-                              hasFreshCloudVersion(latestVersion, projectUID: activeProject.uid) {
-                        installCard(version: latestVersion, projectUID: activeProject.uid)
-                    }
-                } else {
-                    InstrumentCard {
-                        Text("Create a project in Settings to start training.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                        recordAudioButton
+                        latestVersionCard(for: activeProject)
+                    } else {
+                        InstrumentCard {
+                            Text("Create a project in Settings to start training.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
+                .padding(18)
+                .padding(.top, 12)
+                .padding(.bottom, max(104, geo.safeAreaInsets.bottom + 80))
             }
-            .padding(20)
-            .padding(.top, 8)
-            .padding(.bottom, 80)
         }
         .background(Color.black.ignoresSafeArea())
-        .safeAreaInset(edge: .top) {
-            if let activeProject = appContext.activeProject {
-                ContextHeader(
-                    title: activeProject.name,
-                    subtitle: latestVersionSubtitle(for: activeProject.uid),
-                    onSwitch: { showProjectSwitcher = true }
-                )
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
-                .background(Color.clear)
-            }
-        }
         .navigationDestination(isPresented: $showRecordingView) {
             RecordingView(
                 projectName: appContext.activeProject?.name
@@ -140,11 +129,6 @@ struct TrainWorkspaceView: View {
                 _ = try? await appContext.modelSpecs(projectUID: activeProject.uid, version: latestVersion)
             }
         }
-        .task(id: presentRecorderToken) {
-            guard presentRecorderToken > 0 else { return }
-            guard appContext.activeProject != nil else { return }
-            presentRecordingView()
-        }
         .task(id: appContext.trainingRequestUID) {
             stageTrainingSequenceIfNeeded()
         }
@@ -166,6 +150,258 @@ struct TrainWorkspaceView: View {
             guard newValue > 0 else { return }
             AppHaptics.success()
         }
+    }
+
+    private var trainHeader: some View {
+        HStack {
+            Text("Train")
+                .font(.system(size: 30, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+        }
+    }
+
+    private func activeProjectCard(for project: Project) -> some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 18)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.28, green: 0.63, blue: 1.0),
+                            Color(red: 0.10, green: 0.46, blue: 0.96)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 46, height: 46)
+                .overlay(
+                    Image(systemName: "waveform")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.white)
+                )
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(project.name)
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+
+                Text("Active project")
+                    .font(.caption.weight(.regular))
+                    .foregroundStyle(Color.white.opacity(0.5))
+            }
+
+            Spacer(minLength: 12)
+
+            Button("Switch") {
+                showProjectSwitcher = true
+            }
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(Color(red: 0.11, green: 0.53, blue: 0.98))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(
+                Capsule()
+                    .fill(Color(red: 0.10, green: 0.26, blue: 0.46).opacity(0.8))
+            )
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 22)
+                .fill(Color.white.opacity(0.09))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private func readinessSummaryCard(
+        for project: Project,
+        projectLabels: [RecorderLabel],
+        readyLabels: [RecorderLabel],
+        isReady: Bool
+    ) -> some View {
+        let labelRows = readinessLabelRows(for: projectLabels)
+        let totalClips = labelRows.reduce(0) { $0 + $1.clipCount }
+        let labelsWithAudio = labelRows.filter { $0.clipCount > 0 }.count
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill((isReady ? Color.green : Color.orange).opacity(0.22))
+                        .frame(width: 58, height: 58)
+
+                    Image(systemName: isReady ? "checkmark" : "exclamationmark")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(isReady ? Color.green.opacity(0.95) : Color.orange)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(isReady ? "Ready to train" : "Keep collecting audio")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+
+                    Text("\(labelsWithAudio) of \(projectLabels.count) labels have audio · \(totalClips) clips")
+                        .font(.caption.weight(.regular))
+                        .foregroundStyle(Color.white.opacity(0.55))
+                }
+            }
+
+            Divider()
+                .overlay(Color.white.opacity(0.08))
+
+            VStack(spacing: 12) {
+                ForEach(labelRows) { row in
+                    readinessRow(row, maxClipCount: labelRows.map(\.clipCount).max() ?? 1)
+                }
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 24)
+                .fill(Color.white.opacity(0.09))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24)
+                .stroke(Color.white.opacity(0.07), lineWidth: 1)
+        )
+    }
+
+    private func readinessRow(_ row: TrainingLabelReadinessRow, maxClipCount: Int) -> some View {
+        HStack(spacing: 14) {
+            Circle()
+                .fill(row.clipCount > 0 ? Color.green.opacity(0.95) : Color.orange)
+                .frame(width: 12, height: 12)
+
+            Text(row.label.name)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+
+            Spacer(minLength: 12)
+
+            if row.clipCount > 0 {
+                Capsule()
+                    .fill(Color.white.opacity(0.14))
+                    .frame(width: 96, height: 9)
+                    .overlay(alignment: .leading) {
+                        Capsule()
+                            .fill(Color(red: 0.11, green: 0.53, blue: 0.98))
+                            .frame(width: max(20, 96 * CGFloat(row.clipCount) / CGFloat(max(maxClipCount, 1))), height: 9)
+                    }
+
+                Text("\(row.clipCount)")
+                    .font(.system(size: 14, weight: .regular, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.65))
+                    .frame(width: 24, alignment: .trailing)
+            } else {
+                Text("Needs audio")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.orange)
+            }
+        }
+    }
+
+    private func trainingActionButton(for project: Project, isReady: Bool) -> some View {
+        Button {
+            startTraining(for: project)
+        } label: {
+            HStack(spacing: 8) {
+                if appContext.isStartingTraining {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                }
+
+                Text("Start training")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 17)
+            .background(
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.29, green: 0.64, blue: 1.0),
+                                Color(red: 0.09, green: 0.51, blue: 0.98)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            )
+            .shadow(color: Color(red: 0.11, green: 0.53, blue: 0.98).opacity(0.35), radius: 18, y: 10)
+        }
+        .buttonStyle(.plain)
+        .disabled(!isReady || appContext.isStartingTraining)
+        .opacity((!isReady || appContext.isStartingTraining) ? 0.55 : 1)
+    }
+
+    private var recordAudioButton: some View {
+        Button {
+            presentRecordingView()
+        } label: {
+            HStack(spacing: 14) {
+                Circle()
+                    .fill(Color(red: 1.0, green: 0.32, blue: 0.26))
+                    .frame(width: 14, height: 14)
+                    .shadow(color: Color.red.opacity(0.35), radius: 10)
+
+                Text("Record audio")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color(red: 0.11, green: 0.53, blue: 0.98))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 15)
+            .background(
+                RoundedRectangle(cornerRadius: 22)
+                    .fill(Color.white.opacity(0.09))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22)
+                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func latestVersionCard(for project: Project) -> some View {
+        let latestVersion = appContext.latestKnownVersion(for: project.uid)
+        let installed = latestVersion.map { version in
+            appContext.activeProjectInstalledModels.contains(where: { $0.version == version })
+        } ?? false
+
+        return HStack {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(latestVersion.map { "Latest version · v\($0)" } ?? "No trained versions yet")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+
+                Text(installed ? "Installed on this device" : "Manage versions and installs")
+                    .font(.footnote.weight(.regular))
+                    .foregroundStyle(Color.white.opacity(0.5))
+            }
+
+            Spacer()
+
+            Button("Manage", action: onViewModels)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color(red: 0.11, green: 0.53, blue: 0.98))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 15)
+        .background(
+            RoundedRectangle(cornerRadius: 22)
+                .fill(Color.white.opacity(0.07))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22)
+                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+        )
     }
 
     private func readinessCard(
@@ -427,6 +663,22 @@ struct TrainWorkspaceView: View {
             return "No model versions yet"
         }
         return "Latest: v\(latestVersion)"
+    }
+
+    private func readinessLabelRows(for labels: [RecorderLabel]) -> [TrainingLabelReadinessRow] {
+        labels
+            .map { label in
+                TrainingLabelReadinessRow(
+                    label: label,
+                    clipCount: labelRecordingCounts[label.uid] ?? 0
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.clipCount == rhs.clipCount {
+                    return lhs.label.name.localizedCaseInsensitiveCompare(rhs.label.name) == .orderedAscending
+                }
+                return lhs.clipCount > rhs.clipCount
+            }
     }
 
     private func readinessItems(for project: Project, labels: [RecorderLabel], readyLabels: [RecorderLabel]) -> [ReadinessItem] {
@@ -753,4 +1005,11 @@ private struct ReadinessItem {
     let title: String
     let isSatisfied: Bool
     let actionTitle: String?
+}
+
+private struct TrainingLabelReadinessRow: Identifiable {
+    let label: RecorderLabel
+    let clipCount: Int
+
+    var id: String { label.uid }
 }

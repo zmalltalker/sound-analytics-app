@@ -10,7 +10,6 @@ struct MainView: View {
     @State private var showProjectSwitcher = false
     @State private var showProfileSheet = false
     @State private var setupDestination: SetupDestination?
-    @State private var trainRecorderPresentationToken = 0
 
     init(
         loginService: AuthenticationService,
@@ -32,7 +31,6 @@ struct MainView: View {
                         HomeLaunchView(
                             selectedSection: $selectedSection,
                             showingHome: $showingHome,
-                            trainRecorderPresentationToken: $trainRecorderPresentationToken,
                             showProjectSwitcher: $showProjectSwitcher,
                             onOpenProjects: openProjectsSetup
                         )
@@ -44,8 +42,7 @@ struct MainView: View {
 
                 AppSectionBar(
                     selectedSection: $selectedSection,
-                    showingHome: $showingHome,
-                    trainRecorderPresentationToken: $trainRecorderPresentationToken
+                    showingHome: $showingHome
                 )
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
@@ -90,7 +87,6 @@ struct MainView: View {
             TrainWorkspaceView(
                 loginService: loginService,
                 showProjectSwitcher: $showProjectSwitcher,
-                presentRecorderToken: trainRecorderPresentationToken,
                 onViewModels: {
                     showingHome = false
                     selectedSection = .models
@@ -140,7 +136,6 @@ private struct AppSectionBar: View {
 
     @Binding var selectedSection: AppSection
     @Binding var showingHome: Bool
-    @Binding var trainRecorderPresentationToken: Int
 
     var body: some View {
         HStack(spacing: 6) {
@@ -166,9 +161,6 @@ private struct AppSectionBar: View {
         return Button {
             selectedSection = section
             showingHome = false
-            if section == .train {
-                trainRecorderPresentationToken += 1
-            }
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: systemImage(for: section))
