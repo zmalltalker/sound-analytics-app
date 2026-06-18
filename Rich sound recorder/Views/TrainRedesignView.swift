@@ -13,6 +13,7 @@ struct TrainWorkspaceView: View {
     private let recordingRepository: RecordingRepository
     private let projectRepository: ProjectRepository
     private let labelRepository: LabelRepository
+    private let lastUsedLabelDefaultsKey = "train.lastUsedLabelByProject"
 
     @State private var labelRecordingCounts: [String: Int] = [:]
     @State private var showRecordingView = false
@@ -823,7 +824,8 @@ struct TrainWorkspaceView: View {
                 let allowedUIDs = Set(activeProject.labelUIDs)
                 let filteredLabels = labels.filter { allowedUIDs.contains($0.uid) }
                 availableLabels = filteredLabels
-                selectedLabelUID = filteredLabels.first?.uid
+                let lastUsedLabelUID = lastUsedLabelUID(for: activeProject.uid)
+                selectedLabelUID = filteredLabels.first(where: { $0.uid == lastUsedLabelUID })?.uid ?? filteredLabels.first?.uid
             } catch {
                 labelLoadingError = error.localizedDescription
             }
@@ -839,6 +841,9 @@ struct TrainWorkspaceView: View {
             do {
                 try await recordingRepository.uploadRecording(recording: pendingRecording, labelUID: selectedLabelUID)
                 await MainActor.run {
+                    if let activeProjectUID = appContext.activeProject?.uid {
+                        storeLastUsedLabelUID(selectedLabelUID, for: activeProjectUID)
+                    }
                     labelRecordingCounts[selectedLabelUID, default: 0] += 1
                     showUploadSheet = false
                     self.pendingRecording = nil
@@ -853,6 +858,17 @@ struct TrainWorkspaceView: View {
                 isUploading = false
             }
         }
+    }
+
+    private func lastUsedLabelUID(for projectUID: String) -> String? {
+        let persisted = UserDefaults.standard.dictionary(forKey: lastUsedLabelDefaultsKey) as? [String: String]
+        return persisted?[projectUID]
+    }
+
+    private func storeLastUsedLabelUID(_ labelUID: String, for projectUID: String) {
+        var persisted = UserDefaults.standard.dictionary(forKey: lastUsedLabelDefaultsKey) as? [String: String] ?? [:]
+        persisted[projectUID] = labelUID
+        UserDefaults.standard.set(persisted, forKey: lastUsedLabelDefaultsKey)
     }
 
     private func installLatestVersion(version: String, projectUID: String) {
