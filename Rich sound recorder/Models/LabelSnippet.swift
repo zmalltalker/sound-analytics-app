@@ -6,4 +6,5 @@ struct LabelSnippet: Identifiable, Codable {
 
     var id: String { "\(start)-\(end)" }
     var duration: TimeInterval { max(0, end - start) }
+    var startDate: Date { Date(timeIntervalSince1970: start) }
 }

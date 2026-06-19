@@ -1,5 +1,10 @@
 import Foundation
 
+enum ClipReviewDecision {
+    case keep
+    case discard
+}
+
 @MainActor
 class ClipRepository {
     private let apiService: APIService
@@ -35,6 +40,22 @@ class ClipRepository {
         let metadata = parseMetadata(from: metadataHeader)
 
         return SnippetAudioFile(fileURL: fileURL, metadata: metadata)
+    }
+
+    func submitReviewDecision(
+        labelUID: String,
+        start: TimeInterval,
+        end: TimeInterval,
+        decision: ClipReviewDecision
+    ) async throws {
+        _ = labelUID
+        _ = start
+        _ = end
+        _ = decision
+
+        // The API has not exposed keep/discard yet. Keep the review flow wired
+        // through the repository so the eventual backend call lands in one place.
+        try await Task.sleep(for: .milliseconds(150))
     }
 
     private func parseMetadata(from headerValue: String?) -> SnippetAudioFile.Metadata? {

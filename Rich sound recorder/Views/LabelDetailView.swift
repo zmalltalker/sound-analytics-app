@@ -8,14 +8,14 @@ struct LabelDetailView: View {
     @State private var snippets: [LabelSnippet] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
-    @State private var downloadStates: [LabelSnippet.ID: SnippetDownloadState] = [:]
+    @State private var showReviewFlow = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: RSRSpace.lg) {
                 headerSection
                 labelSummaryCard
-                clipsSection
+                recordingsSection
             }
             .padding(.horizontal, RSRSpace.screen)
             .padding(.top, RSRSpace.card)
@@ -30,6 +30,24 @@ struct LabelDetailView: View {
         .refreshable {
             await loadSnippets()
         }
+        .safeAreaInset(edge: .bottom) {
+            if !isLoading && errorMessage == nil && !snippets.isEmpty {
+                RSRPrimaryButton(title: "Review one by one") {
+                    showReviewFlow = true
+                }
+                .padding(.horizontal, RSRSpace.screen)
+                .padding(.top, 10)
+                .padding(.bottom, 20)
+            }
+        }
+        .fullScreenCover(isPresented: $showReviewFlow) {
+            LabelReviewFlowView(
+                labelUID: labelUID,
+                labelName: labelName,
+                snippets: snippets,
+                clipRepository: clipRepository
+            )
+        }
     }
 
     private var headerSection: some View {
@@ -39,7 +57,7 @@ struct LabelDetailView: View {
                 .tracking(RSRTracking.largeTitle)
                 .foregroundStyle(RSR.labelPrimary)
 
-            Text("Recorded clips and downloads for this label.")
+            Text("Review recordings for this label and trim the training set.")
                 .font(.rsrSubhead)
                 .foregroundStyle(RSR.labelSecondary)
         }
@@ -50,20 +68,21 @@ struct LabelDetailView: View {
             VStack(alignment: .leading, spacing: RSRSpace.md) {
                 detailRow(title: "Label", value: labelName)
                 detailRow(title: "UID", value: labelUID, selectable: true)
-                detailRow(title: "Clips", value: isLoading ? "Loading..." : "\(snippets.count)")
+                detailRow(title: "Recordings", value: isLoading ? "Loading..." : "\(snippets.count)")
+                detailRow(title: "Queued review time", value: isLoading ? "Loading..." : totalDurationLabel)
             }
         }
     }
 
-    private var clipsSection: some View {
+    private var recordingsSection: some View {
         VStack(alignment: .leading, spacing: RSRSpace.md) {
-            sectionTitle("Clips")
+            sectionTitle("Recordings")
 
             if isLoading {
-                loadingCard("Loading clips...")
+                loadingCard("Loading recordings...")
             } else if let errorMessage {
                 messageCard(
-                    title: "Couldn’t load clips",
+                    title: "Couldn’t load recordings",
                     subtitle: errorMessage,
                     systemImage: "exclamationmark.triangle.fill",
                     tint: RSR.warning
@@ -76,22 +95,37 @@ struct LabelDetailView: View {
                 }
             } else if snippets.isEmpty {
                 messageCard(
-                    title: "No clips yet",
-                    subtitle: "This label doesn’t have any downloadable snippets yet.",
+                    title: "No recordings yet",
+                    subtitle: "This label doesn’t have any recordings ready for review yet.",
                     systemImage: "waveform.slash",
                     tint: RSR.labelSecondary
                 )
             } else {
-                VStack(spacing: RSRSpace.sm) {
-                    ForEach(snippets) { snippet in
-                        SnippetRow(
-                            snippet: snippet,
-                            state: downloadStates[snippet.id] ?? .idle,
-                            labelName: labelName,
-                            clipRangeLabel: clipRangeLabel(for: snippet),
-                            durationLabel: formattedDuration(snippet.duration),
-                            onDownload: { downloadSnippet(snippet) }
-                        )
+                VStack(alignment: .leading, spacing: RSRSpace.md) {
+                    reviewCard
+
+                    RSRCard(radius: RSRRadius.card) {
+                        VStack(spacing: 0) {
+                            ForEach(Array(snippets.prefix(6).enumerated()), id: \.element.id) { index, snippet in
+                                ReviewRecordingRow(
+                                    timestamp: snippet.startDate.formatted(date: .abbreviated, time: .shortened),
+                                    relative: snippet.relativeTimeLabel,
+                                    duration: formattedDuration(snippet.duration)
+                                )
+                                if index < min(snippets.count, 6) - 1 {
+                                    Divider()
+                                        .overlay(RSR.hairline)
+                                        .padding(.leading, 51)
+                                }
+                            }
+                        }
+                    }
+
+                    if snippets.count > 6 {
+                        Text("+ \(snippets.count - 6) more recordings")
+                            .font(.rsrSubhead)
+                            .foregroundStyle(RSR.labelTertiary)
+                            .frame(maxWidth: .infinity)
                     }
                 }
             }
@@ -111,14 +145,6 @@ struct LabelDetailView: View {
         isLoading = false
     }
 
-    private func clipRangeLabel(for snippet: LabelSnippet) -> String {
-        let start = Date(timeIntervalSince1970: snippet.start)
-        let end = Date(timeIntervalSince1970: snippet.end)
-        let startText = start.formatted(date: .abbreviated, time: .shortened)
-        let endText = end.formatted(date: .omitted, time: .shortened)
-        return "\(startText) – \(endText)"
-    }
-
     private func formattedDuration(_ duration: TimeInterval) -> String {
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = duration >= 60 ? [.minute, .second] : [.second]
@@ -127,152 +153,80 @@ struct LabelDetailView: View {
         return formatter.string(from: duration) ?? String(format: "%.1fs", duration)
     }
 
-    private func downloadSnippet(_ snippet: LabelSnippet) {
-        downloadStates[snippet.id] = .downloading
+    private var totalDurationLabel: String {
+        let total = snippets.reduce(0) { $0 + $1.duration }
+        guard total > 0 else { return "0 sec" }
+        if total >= 60 {
+            return "\(Int((total / 60).rounded(.up))) min"
+        }
+        return "\(Int(total.rounded())) sec"
+    }
+    
+    private var reviewCard: some View {
+        RSRCard(radius: RSRRadius.card) {
+            VStack(alignment: .leading, spacing: RSRSpace.md) {
+                Text("Ready to review")
+                    .font(.rsrTitle)
+                    .tracking(RSRTracking.title)
+                    .foregroundStyle(RSR.labelPrimary)
 
-        Task {
-            do {
-                let result = try await clipRepository.downloadSnippet(start: snippet.start, end: snippet.end)
-                await MainActor.run {
-                    downloadStates[snippet.id] = .downloaded(result)
-                }
-            } catch {
-                await MainActor.run {
-                    downloadStates[snippet.id] = .failed(error.localizedDescription)
-                }
+                Text("\(snippets.count) recordings · \(totalDurationLabel) queued")
+                    .font(.rsrSubhead)
+                    .foregroundStyle(RSR.labelSecondary)
+
+                Divider()
+                    .overlay(RSR.hairline)
+
+                Text("Listen through each recording and keep or discard it before training.")
+                    .font(.rsrBody)
+                    .foregroundStyle(RSR.labelSecondary)
             }
         }
     }
 }
 
-private struct SnippetRow: View {
-    let snippet: LabelSnippet
-    let state: SnippetDownloadState
-    let labelName: String
-    let clipRangeLabel: String
-    let durationLabel: String
-    let onDownload: () -> Void
+private struct ReviewRecordingRow: View {
+    let timestamp: String
+    let relative: String
+    let duration: String
 
     var body: some View {
-        RSRCard(radius: RSRRadius.control) {
-            VStack(alignment: .leading, spacing: RSRSpace.md) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(clipRangeLabel)
-                        .font(.rsrBody.weight(.semibold))
-                        .foregroundStyle(RSR.labelPrimary)
-
-                    Text("Duration · \(durationLabel)")
-                        .font(.rsrMeta)
-                        .foregroundStyle(RSR.labelSecondary)
+        HStack(spacing: 14) {
+            Circle()
+                .fill(RSR.accentTint)
+                .frame(width: 36, height: 36)
+                .overlay {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(RSR.accent)
                 }
 
-                HStack(alignment: .center, spacing: 12) {
-                    Circle()
-                        .fill(statusColor.opacity(0.16))
-                        .frame(width: 34, height: 34)
-                        .overlay {
-                            Image(systemName: statusIcon)
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(statusColor)
-                        }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(timestamp)
+                    .font(.rsrBody.weight(.semibold))
+                    .foregroundStyle(RSR.labelPrimary)
 
-                    Text(statusLabel)
-                        .font(.rsrSubhead.weight(.semibold))
-                        .foregroundStyle(RSR.labelSecondary)
-
-                    Spacer()
-
-                    actionView
-                }
-
-                if case .failed(let message) = state {
-                    Text(message)
-                        .font(.rsrSubhead)
-                        .foregroundStyle(RSR.warning)
-                }
+                Text(relative)
+                    .font(.rsrSubhead)
+                    .foregroundStyle(RSR.labelSecondary)
             }
-        }
-    }
 
-    @ViewBuilder
-    private var actionView: some View {
-        switch state {
-        case .idle:
-            Button("Download", action: onDownload)
+            Spacer()
+
+            Text(duration)
                 .font(.rsrSubhead.weight(.semibold))
-                .foregroundStyle(RSR.accent)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(RSR.accentTint)
-                .clipShape(RoundedRectangle(cornerRadius: RSRRadius.chip, style: .continuous))
-
-        case .downloading:
-            ProgressView()
-                .tint(RSR.accent)
-
-        case .downloaded(let audioFile):
-            NavigationLink {
-                SnippetPlayerView(
-                    labelName: labelName,
-                    audioFile: audioFile
-                )
-            } label: {
-                Text("Open")
-                    .font(.rsrSubhead.weight(.semibold))
-                    .foregroundStyle(RSR.success)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(RSR.success.opacity(0.16))
-                    .clipShape(RoundedRectangle(cornerRadius: RSRRadius.chip, style: .continuous))
-            }
-            .buttonStyle(.plain)
-
-        case .failed:
-            Button("Retry", action: onDownload)
-                .font(.rsrSubhead.weight(.semibold))
-                .foregroundStyle(RSR.warning)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(RSR.warning.opacity(0.14))
-                .clipShape(RoundedRectangle(cornerRadius: RSRRadius.chip, style: .continuous))
+                .foregroundStyle(RSR.labelSecondary)
+                .monospacedDigit()
         }
+        .frame(minHeight: 44)
     }
+}
 
-    private var statusLabel: String {
-        switch state {
-        case .idle:
-            return "Ready to download"
-        case .downloading:
-            return "Downloading clip..."
-        case .downloaded:
-            return "Downloaded"
-        case .failed:
-            return "Download failed"
-        }
-    }
-
-    private var statusIcon: String {
-        switch state {
-        case .idle:
-            return "arrow.down"
-        case .downloading:
-            return "arrow.trianglehead.2.clockwise"
-        case .downloaded:
-            return "checkmark"
-        case .failed:
-            return "exclamationmark"
-        }
-    }
-
-    private var statusColor: Color {
-        switch state {
-        case .idle, .downloading:
-            return RSR.accent
-        case .downloaded:
-            return RSR.success
-        case .failed:
-            return RSR.warning
-        }
+private extension LabelSnippet {
+    var relativeTimeLabel: String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: startDate, relativeTo: Date())
     }
 }
 

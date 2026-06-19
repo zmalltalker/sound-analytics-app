@@ -10,6 +10,7 @@ struct DesignSystemShowcaseView: View {
                 buttonSection
                 selectorSection
                 waveformSection
+                reviewSection
                 labelsSection
                 eventsSection
                 tabBarSection
@@ -126,6 +127,130 @@ struct DesignSystemShowcaseView: View {
                 }
             }
         }
+    }
+
+    private var reviewSection: some View {
+        VStack(alignment: .leading, spacing: RSRSpace.md) {
+            sectionTitle("Review")
+
+            RSRCard {
+                VStack(alignment: .leading, spacing: RSRSpace.card) {
+                    Text("In-session review")
+                        .font(.rsrTitle)
+                        .tracking(RSRTracking.title)
+                        .foregroundStyle(RSR.labelPrimary)
+
+                    RSRReviewProgressHeader(index: 3, total: 12)
+
+                    Text("Recorded Jun 13, 4:47 PM")
+                        .font(.rsrSubhead)
+                        .foregroundStyle(RSR.labelSecondary)
+                        .padding(.horizontal, 15)
+                        .padding(.vertical, 8)
+                        .rsrGlass(.thin, radius: 14, elevation: .resting)
+
+                    HStack(alignment: .bottom, spacing: 10) {
+                        Text("0:13")
+                            .font(.rsrDisplay)
+                            .foregroundStyle(RSR.labelPrimary)
+                            .monospacedDigit()
+
+                        Text("/ 0:21")
+                            .font(.system(size: 19, weight: .medium))
+                            .foregroundStyle(RSR.labelTertiary)
+                            .padding(.bottom, 12)
+                    }
+
+                    HStack(spacing: 7) {
+                        HStack(alignment: .bottom, spacing: 2) {
+                            reviewActivityBar(6)
+                            reviewActivityBar(12)
+                            reviewActivityBar(8)
+                        }
+                        .frame(height: 12)
+
+                        Text("PLAYING")
+                            .font(.rsrCaption)
+                            .tracking(0.6)
+                            .foregroundStyle(RSR.accent.opacity(0.85))
+                    }
+
+                    RSRReviewWaveform(seed: 9, progress: 0.62)
+                        .frame(height: 124)
+
+                    HStack {
+                        Text("0:13")
+                            .font(.rsrCaption)
+                            .foregroundStyle(RSR.labelSecondary)
+                            .monospacedDigit()
+                        Spacer()
+                        Text("0:21")
+                            .font(.rsrCaption)
+                            .foregroundStyle(RSR.labelTertiary)
+                            .monospacedDigit()
+                    }
+
+                    HStack {
+                        RSRReplayButton()
+                        Spacer()
+                    }
+
+                    RSRDecisionBar()
+
+                    Text("Kept 2 · Removed 0")
+                        .font(.rsrCaption)
+                        .foregroundStyle(RSR.labelTertiary)
+                        .monospacedDigit()
+                }
+            }
+
+            RSRCard {
+                VStack(alignment: .leading, spacing: RSRSpace.card) {
+                    Text("Pre-flight")
+                        .font(.rsrTitle)
+                        .tracking(RSRTracking.title)
+                        .foregroundStyle(RSR.labelPrimary)
+
+                    RSRHeadphonesPrompt(count: 12, totalLength: "~8 min total")
+                        .frame(maxWidth: .infinity)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            RSRCard {
+                VStack(alignment: .leading, spacing: RSRSpace.card) {
+                    Text("Loading and outcome")
+                        .font(.rsrTitle)
+                        .tracking(RSRTracking.title)
+                        .foregroundStyle(RSR.labelPrimary)
+
+                    HStack(alignment: .center, spacing: RSRSpace.card) {
+                        VStack(spacing: RSRSpace.md) {
+                            RSRDownloadRing(progress: 0.72, size: 72)
+                            Text("Loading")
+                                .font(.rsrSubhead.weight(.semibold))
+                                .foregroundStyle(RSR.labelSecondary)
+                        }
+                        .frame(maxWidth: .infinity)
+
+                        VStack(spacing: RSRSpace.md) {
+                            RSROutcomeBadge(outcome: .kept)
+                                .frame(maxWidth: .infinity)
+                            Text("Kept")
+                                .font(.rsrSubhead.weight(.semibold))
+                                .foregroundStyle(RSR.success)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+        }
+    }
+
+    private func reviewActivityBar(_ height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 1)
+            .fill(RSR.accent)
+            .frame(width: 3, height: height)
     }
 
     private var eventsSection: some View {
