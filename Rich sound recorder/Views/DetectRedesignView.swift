@@ -196,7 +196,8 @@ struct DetectWorkspaceView: View {
         SpectrumView(
             bands: recorder.frequencyBands,
             style: .mirroredBars,
-            tint: RSR.accent
+            tint: RSR.accent,
+            mirroredHorizontalPadding: 10
         )
         .frame(height: 220)
         .padding(.horizontal, 14)

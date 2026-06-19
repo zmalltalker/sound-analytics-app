@@ -413,34 +413,42 @@ struct SpectrumView: View {
     let bands: [Float]
     var style: Style = .bottomBars
     var tint: Color? = nil
+    var mirroredHorizontalPadding: CGFloat = 0
 
     var body: some View {
         GeometryReader { geo in
-            let renderedBands = style == .mirroredBars ? interpolatedBands(targetCount: 44) : bands
-            let spacing: CGFloat = style == .mirroredBars ? 7 : 1
-            let horizontalPadding: CGFloat = style == .mirroredBars ? 0 : 6
-            let barWidth = max(3, (geo.size.width - horizontalPadding * 2 - CGFloat(renderedBands.count - 1) * spacing) / CGFloat(renderedBands.count))
+            let renderedBands = style == .mirroredBars ? interpolatedBands(targetCount: 32) : bands
+            let spacing: CGFloat = style == .mirroredBars ? 5 : 1
+            let horizontalPadding: CGFloat = style == .mirroredBars ? mirroredHorizontalPadding : 6
+            let barWidth: CGFloat = max(
+                style == .mirroredBars ? 4 : 3,
+                (geo.size.width - horizontalPadding * 2 - CGFloat(renderedBands.count - 1) * spacing) / CGFloat(renderedBands.count)
+            )
+            let contentWidth = CGFloat(renderedBands.count) * barWidth + CGFloat(max(renderedBands.count - 1, 0)) * spacing
 
-            HStack(alignment: .center, spacing: spacing) {
-                ForEach(0..<renderedBands.count, id: \.self) { index in
-                    let rawValue = CGFloat(max(renderedBands[index], 0))
-                    let value = style == .mirroredBars
-                        ? mirroredAmplitude(for: rawValue)
-                        : rawValue
-                    let fill = resolvedColor(for: index)
-                    let heightMultiplier: CGFloat = style == .mirroredBars ? 0.94 : 1
-                    let barHeight = max(style == .mirroredBars ? 8 : 6, geo.size.height * value * heightMultiplier)
+            HStack {
+                HStack(alignment: .center, spacing: spacing) {
+                    ForEach(0..<renderedBands.count, id: \.self) { index in
+                        let rawValue = CGFloat(max(renderedBands[index], 0))
+                        let value = style == .mirroredBars
+                            ? mirroredAmplitude(for: rawValue)
+                            : rawValue
+                        let fill = resolvedColor(for: index)
+                        let heightMultiplier: CGFloat = style == .mirroredBars ? 0.94 : 1
+                        let barHeight = max(style == .mirroredBars ? 8 : 6, geo.size.height * value * heightMultiplier)
 
-                    RoundedRectangle(cornerRadius: style == .mirroredBars ? 3 : 2)
-                        .fill(fill)
-                        .frame(width: barWidth, height: barHeight)
-                        .frame(maxHeight: .infinity, alignment: .center)
-                        .shadow(color: style == .mirroredBars ? fill.opacity(0.22) : .clear, radius: 4)
-                        .animation(.easeOut(duration: 0.08), value: value)
+                        RoundedRectangle(cornerRadius: style == .mirroredBars ? 3 : 2)
+                            .fill(fill)
+                            .frame(width: barWidth, height: barHeight)
+                            .frame(maxHeight: .infinity, alignment: .center)
+                            .shadow(color: style == .mirroredBars ? fill.opacity(0.22) : .clear, radius: 4)
+                            .animation(.easeOut(duration: 0.08), value: value)
+                    }
                 }
+                .frame(width: style == .mirroredBars ? min(contentWidth, geo.size.width) : nil)
+                .padding(.horizontal, horizontalPadding)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: style == .mirroredBars ? .center : .bottom)
-            .padding(.horizontal, horizontalPadding)
         }
     }
 
