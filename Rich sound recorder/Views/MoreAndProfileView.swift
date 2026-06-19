@@ -379,11 +379,6 @@ struct ProfileSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: RSRSpace.lg) {
                     profileHeader
-
-                    if let tokenInfo = loginService.getTokenInfo() {
-                        tokenInfoCard(tokenInfo)
-                    }
-
                     signOutButton
                 }
                 .padding(.horizontal, RSRSpace.screen)
@@ -403,6 +398,9 @@ struct ProfileSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .task {
+            await loginService.refreshUserProfileIfNeeded()
+        }
     }
 
     private var profileHeader: some View {
@@ -417,46 +415,23 @@ struct ProfileSheet: View {
                             .foregroundStyle(RSR.accent)
                     }
 
-                if let username = loginService.username {
-                    Text(username)
+                if let title = loginService.displayName ?? loginService.username {
+                    Text(title)
                         .font(.rsrTitle)
                         .tracking(RSRTracking.title)
                         .foregroundStyle(RSR.labelPrimary)
                         .multilineTextAlignment(.center)
                 }
 
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(RSR.success)
-                    Text("Signed in")
+                if let emailAddress = loginService.emailAddress,
+                   emailAddress != loginService.displayName {
+                    Text(emailAddress)
                         .font(.rsrSubhead)
                         .foregroundStyle(RSR.labelSecondary)
+                        .multilineTextAlignment(.center)
                 }
             }
             .frame(maxWidth: .infinity)
-        }
-    }
-
-    private func tokenInfoCard(_ tokenInfo: TokenInfo) -> some View {
-        RSRCard {
-            VStack(alignment: .leading, spacing: RSRSpace.md) {
-                Text("Keychain data")
-                    .font(.rsrCaption)
-                    .tracking(RSRTracking.eyebrow)
-                    .foregroundStyle(RSR.labelSecondary)
-                    .textCase(.uppercase)
-
-                VStack(spacing: RSRSpace.sm) {
-                    InfoRow(label: "Username", value: tokenInfo.username ?? "Unknown")
-                    InfoRow(label: "Account ID", value: tokenInfo.homeAccountId)
-                    InfoRow(label: "Environment", value: tokenInfo.environment ?? "Unknown")
-                    InfoRow(label: "Keychain Group", value: "ai.resonyx.ios-recorder")
-                }
-
-                Text("Access tokens, refresh tokens, and ID tokens are securely stored in iOS Keychain.")
-                    .font(.rsrSubhead)
-                    .foregroundStyle(RSR.labelSecondary)
-            }
         }
     }
 
@@ -477,24 +452,5 @@ struct ProfileSheet: View {
             .rsrGlass(.regular, radius: RSRRadius.control, fill: RSR.surfaceGlassStrong, elevation: .card)
         }
         .buttonStyle(.plain)
-    }
-}
-
-struct InfoRow: View {
-    let label: String
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(.rsrCaption)
-                .foregroundStyle(RSR.labelSecondary)
-            Text(value)
-                .font(.rsrMeta)
-                .foregroundStyle(RSR.accent)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

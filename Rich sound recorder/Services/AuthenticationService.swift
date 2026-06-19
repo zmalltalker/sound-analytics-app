@@ -17,6 +17,7 @@ class AuthenticationService {
     private var currentAccount: MSALAccount?
     private(set) var isLoggedIn: Bool = false
     private(set) var username: String?
+    private(set) var currentUserProfile: User?
 
     private static let TENANT_ID = "7fd16dc5-af0e-4826-adea-022e56bd9f22"
 //    private let scopes = ["User.Read"]
@@ -44,6 +45,14 @@ class AuthenticationService {
         }
     }
 
+    var displayName: String? {
+        currentUserProfile?.name
+    }
+
+    var emailAddress: String? {
+        currentUserProfile?.email ?? username
+    }
+
     /// Load the current account from the cache (tokens stored in Keychain by MSAL)
     func loadCurrentAccount() {
         guard let application = application else { return }
@@ -55,6 +64,7 @@ class AuthenticationService {
                 username = account.username
                 isLoggedIn = true
                 print("Auth restored account: \(account.username ?? "unknown")")
+                Task { await self.refreshUserProfileIfNeeded() }
             } else {
                 print("Auth: no cached account")
             }
@@ -106,6 +116,7 @@ class AuthenticationService {
                 self.currentAccount = result.account
                 self.username = result.account.username
                 self.isLoggedIn = true
+                await self.refreshUserProfileIfNeeded(force: true)
             }
         }
     }
@@ -151,6 +162,7 @@ class AuthenticationService {
             try application.remove(account)
             currentAccount = nil
             username = nil
+            currentUserProfile = nil
             isLoggedIn = false
             print("Auth logout succeeded")
         } catch {
@@ -167,6 +179,18 @@ class AuthenticationService {
             homeAccountId: account.homeAccountId?.identifier ?? "Unknown",
             environment: account.environment
         )
+    }
+
+    func refreshUserProfileIfNeeded(force: Bool = false) async {
+        guard isLoggedIn else { return }
+        if !force, currentUserProfile != nil { return }
+
+        do {
+            let apiService = APIService(loginService: self)
+            currentUserProfile = try await apiService.whoami()
+        } catch {
+            print("Auth whoami failed: \(error)")
+        }
     }
 }
 

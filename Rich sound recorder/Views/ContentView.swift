@@ -17,9 +17,9 @@ struct ContentView: View {
             if isCheckingAuth {
                 // Show loading while checking auth state
                 ZStack {
-                    Color.black.ignoresSafeArea()
+                    RSR.canvas.ignoresSafeArea()
                     ProgressView()
-                        .tint(.cyan)
+                        .tint(RSR.accent)
                 }
             } else if loginService.isLoggedIn {
                 MainView(loginService: loginService)

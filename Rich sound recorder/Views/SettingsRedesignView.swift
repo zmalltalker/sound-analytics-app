@@ -55,11 +55,11 @@ struct SettingsWorkspaceView: View {
                         }
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(loginService.username ?? "Account")
+                        Text("My profile")
                             .font(.rsrBody.weight(.semibold))
                             .foregroundStyle(RSR.labelPrimary)
 
-                        Text("Signed in via Azure")
+                        Text("Logged in as \(loginService.displayName ?? loginService.username ?? "Unknown")")
                             .font(.rsrSubhead)
                             .foregroundStyle(RSR.labelSecondary)
                     }
@@ -75,6 +75,9 @@ struct SettingsWorkspaceView: View {
                 .rsrGlass(.regular, radius: RSRRadius.card, elevation: .card)
             }
             .buttonStyle(.plain)
+        }
+        .task {
+            await loginService.refreshUserProfileIfNeeded()
         }
     }
 
