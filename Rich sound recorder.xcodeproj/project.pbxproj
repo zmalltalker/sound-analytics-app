@@ -311,7 +311,7 @@
 		2967B8AA2F584E0A0033B1BF /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Resonyx icon v2";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "Rich sound recorder/Rich sound recorder.entitlements";
 				CODE_SIGN_STYLE = Automatic;
@@ -320,6 +320,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Rich-sound-recorder-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Resonyx;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record audio in various formats for sound analysis and machine learning.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -334,7 +335,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "ai.resonyx.ios-recorder";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = Resonyx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -348,7 +349,7 @@
 		2967B8AB2F584E0A0033B1BF /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Resonyx icon v2";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "Rich sound recorder/Rich sound recorder.entitlements";
 				CODE_SIGN_STYLE = Automatic;
@@ -357,6 +358,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Rich-sound-recorder-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Resonyx;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record audio in various formats for sound analysis and machine learning.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -371,7 +373,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "ai.resonyx.ios-recorder";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = Resonyx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;

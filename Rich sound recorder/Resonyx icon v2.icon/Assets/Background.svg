@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="rsr_bg" x1="150" y1="70" x2="900" y2="1000" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3A9BFF"></stop>
+      <stop offset="0.62" stop-color="#0A6FFF"></stop>
+      <stop offset="1" stop-color="#0A5BDD"></stop>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#rsr_bg)"></rect>
+</svg>
