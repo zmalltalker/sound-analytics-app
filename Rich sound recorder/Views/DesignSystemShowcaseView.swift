@@ -13,6 +13,7 @@ struct DesignSystemShowcaseView: View {
                 labelsSection
                 eventsSection
                 tabBarSection
+                typographySection
             }
             .padding(.horizontal, RSRSpace.screen)
             .padding(.top, RSRSpace.card)
@@ -147,7 +148,18 @@ struct DesignSystemShowcaseView: View {
 
     private var typographySection: some View {
         VStack(alignment: .leading, spacing: RSRSpace.md) {
-            sectionTitle("Navigation")
+            sectionTitle("Typography")
+            Text("rsrDisplay")
+                .font(.rsrDisplay)
+            Text("rsrLargeTitle").font(.rsrLargeTitle)
+            Text("rsrTitle").font(.rsrTitle)
+            Text("rsrHeadline").font(.rsrHeadline)
+            Text("rsrBody").font(.rsrBody)
+            Text("rsrSubhead").font(.rsrSubhead)
+            Text("rsrCaption").font(.rsrCaption)
+            Text("rsrMeta").font(.rsrMeta)
+            Text("rsrEyebrow").rsrEyebrow()
+            Text("rsrTabular").rsrTabular()
         }
     }
 
