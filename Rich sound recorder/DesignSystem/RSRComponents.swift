@@ -346,17 +346,21 @@ struct RSRTab: Identifiable {
 struct RSRTabBar: View {
     let tabs: [RSRTab]
     @Binding var selection: Int
+    var badges: [RSRBadgeKind] = []
 
     var body: some View {
         HStack(spacing: 0) {
             ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
                 let active = index == selection
+                let badge = badges.indices.contains(index) ? badges[index] : .none
                 Button {
                     selection = index
                 } label: {
                     VStack(spacing: 4) {
                         Image(systemName: active ? tab.iconActive : tab.icon)
                             .font(.system(size: 21, weight: .regular))
+                            .frame(width: 28, height: 24)
+                            .rsrTabBadge(badge, ringColor: RSR.surfaceTabBar)
                         Text(tab.title).font(.system(size: 10, weight: .semibold))
                     }
                     .foregroundStyle(active ? RSR.accent : RSR.labelSecondary)

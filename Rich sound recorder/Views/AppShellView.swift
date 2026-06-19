@@ -5,6 +5,7 @@ struct MainView: View {
     let detectionService: any EventDetectionServicing
 
     @State private var appContext: RedesignAppContext
+    @State private var trainingSession: TrainingSessionService
     @State private var selectedSection: AppSection = .train
     @State private var showProjectSwitcher = false
     @State private var showProfileSheet = false
@@ -17,7 +18,9 @@ struct MainView: View {
     ) {
         self.loginService = loginService
         self.detectionService = detectionService
-        _appContext = State(initialValue: RedesignAppContext(loginService: loginService))
+        let trainingSession = TrainingSessionService(loginService: loginService)
+        _trainingSession = State(initialValue: trainingSession)
+        _appContext = State(initialValue: RedesignAppContext(loginService: loginService, trainingSession: trainingSession))
     }
 
     var body: some View {
@@ -61,6 +64,7 @@ struct MainView: View {
             }
         }
         .environment(appContext)
+        .environment(trainingSession)
     }
 
     @ViewBuilder
@@ -73,8 +77,7 @@ struct MainView: View {
                 onViewModels: {
                     selectedSection = .models
                 },
-                onOpenLabels: openLabelsSetup,
-                onLeaveRunning: {}
+                onOpenLabels: openLabelsSetup
             )
         case .detect:
             DetectWorkspaceView(
@@ -111,9 +114,19 @@ struct MainView: View {
 
 private struct AppSectionBar: View {
     @Binding var selectedSection: AppSection
+    @Environment(TrainingSessionService.self) private var trainingSession
 
     var body: some View {
-        RSRTabBar(tabs: RSRTabBar.standardTabs, selection: selectionIndex)
+        RSRTabBar(
+            tabs: RSRTabBar.standardTabs,
+            selection: selectionIndex,
+            badges: [
+                trainingSession.trainBadgeKind,
+                .none,
+                trainingSession.modelsBadgeKind,
+                .none
+            ]
+        )
     }
 
     private var selectionIndex: Binding<Int> {

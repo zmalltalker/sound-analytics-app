@@ -10,6 +10,7 @@ struct DesignSystemShowcaseView: View {
                 buttonSection
                 selectorSection
                 waveformSection
+                trainingSection
                 reviewSection
                 labelsSection
                 eventsSection
@@ -244,6 +245,43 @@ struct DesignSystemShowcaseView: View {
                     }
                 }
             }
+        }
+    }
+
+    private var trainingSection: some View {
+        VStack(alignment: .leading, spacing: RSRSpace.md) {
+            sectionTitle("Training")
+
+            RSRCard {
+                VStack(alignment: .leading, spacing: RSRSpace.card) {
+                    Text("Collapsed bar")
+                        .font(.rsrTitle)
+                        .tracking(RSRTracking.title)
+                        .foregroundStyle(RSR.labelPrimary)
+
+                    RSRTrainingBar(
+                        state: .inProgress(
+                            phase: .training,
+                            fraction: 0.62,
+                            etaText: "~3 min remaining"
+                        )
+                    )
+
+                    RSRTrainingBar(state: .complete)
+                }
+            }
+
+            RSRTrainingSheet(
+                state: .inProgress(
+                    phase: .training,
+                    fraction: 0.62,
+                    etaText: "~3 min remaining"
+                ),
+                project: "Compressor Line A",
+                clipCount: 48
+            )
+            .frame(height: 620)
+            .clipShape(RoundedRectangle(cornerRadius: 38, style: .continuous))
         }
     }
 

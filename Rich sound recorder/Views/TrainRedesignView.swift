@@ -3,12 +3,12 @@ import SwiftUI
 
 struct TrainWorkspaceView: View {
     @Environment(RedesignAppContext.self) private var appContext
+    @Environment(TrainingSessionService.self) private var trainingSession
 
     let loginService: AuthenticationService
     @Binding var showProjectSwitcher: Bool
     let onViewModels: () -> Void
     let onOpenLabels: () -> Void
-    let onLeaveRunning: () -> Void
 
     private let recordingRepository: RecordingRepository
     private let projectRepository: ProjectRepository
@@ -28,25 +28,21 @@ struct TrainWorkspaceView: View {
     @State private var isInstallingLatest = false
     @State private var installSuccessMessage: String?
     @State private var installSuccessToken = 0
-    @State private var displayedTrainingStepIndex = 0
-    @State private var isHoldingCompletedTrainingState = false
     @State private var isLoadingTrainingReadiness = false
-    @State private var trainingStepTask: Task<Void, Never>?
-    @State private var stagedTrainingRequestUID: String?
-    @State private var failedTrainingHapticRequestUID: String?
+    @State private var readinessError: String?
+    @State private var didEmitFailureHaptic = false
+    @State private var lastCompletedRequestUID: String?
 
     init(
         loginService: AuthenticationService,
         showProjectSwitcher: Binding<Bool>,
         onViewModels: @escaping () -> Void,
-        onOpenLabels: @escaping () -> Void,
-        onLeaveRunning: @escaping () -> Void
+        onOpenLabels: @escaping () -> Void
     ) {
         self.loginService = loginService
         _showProjectSwitcher = showProjectSwitcher
         self.onViewModels = onViewModels
         self.onOpenLabels = onOpenLabels
-        self.onLeaveRunning = onLeaveRunning
         self.recordingRepository = RecordingRepository(loginService: loginService)
         self.projectRepository = ProjectRepository(loginService: loginService)
         self.labelRepository = LabelRepository(loginService: loginService)
@@ -71,13 +67,21 @@ struct TrainWorkspaceView: View {
                             isLoading: isLoadingTrainingReadiness
                         )
 
-                        if appContext.trainingProjectUID == activeProject.uid,
-                           (appContext.isTrainingInProgress || isHoldingCompletedTrainingState) {
-                            trainingProgressCard
-                        } else if appContext.trainingProjectUID == activeProject.uid, trainingDidFail {
+                        if trainingSession.activeProjectUID == activeProject.uid,
+                           trainingSession.didFail {
                             trainingFailureCard(for: activeProject)
+                        } else if trainingSession.activeProjectUID == activeProject.uid,
+                                  let trainingState = trainingSession.displayState,
+                                  !trainingSession.isSheetPresented {
+                            RSRTrainingBar(state: trainingState) {
+                                trainingSession.reopenSheet()
+                            }
                         } else {
-                            trainingActionButton(for: activeProject, isReady: isReady)
+                            trainingActionButton(
+                                for: activeProject,
+                                isReady: isReady,
+                                clipCount: readyLabels.reduce(0) { $0 + (labelRecordingCounts[$1.uid] ?? 0) }
+                            )
                         }
 
                         recordAudioButton
@@ -128,10 +132,41 @@ struct TrainWorkspaceView: View {
                 onUpload: { uploadPendingRecording() }
             )
         }
+        .sheet(
+            isPresented: Binding(
+                get: { trainingSession.isSheetPresented },
+                set: { trainingSession.isSheetPresented = $0 }
+            )
+        ) {
+            if let trainingState = trainingSession.displayState {
+                RSRTrainingSheet(
+                    state: trainingState,
+                    project: trainingSession.activeProjectName ?? appContext.activeProject?.name ?? "Project",
+                    clipCount: trainingSession.clipCount,
+                    isInstalling: isInstallingLatest,
+                    onLeaveRunning: {
+                        trainingSession.leaveRunning()
+                    },
+                    onCancel: {
+                        trainingSession.cancelTraining()
+                    },
+                    onInstall: {
+                        installCompletedTrainingIfAvailable()
+                    },
+                    onDone: {
+                        trainingSession.doneViewingCompletion()
+                    }
+                )
+                .presentationDetents([.height(620)])
+                .presentationDragIndicator(.hidden)
+                .presentationCornerRadius(38)
+            }
+        }
         .task(id: appContext.activeProject?.uid) {
             guard let activeProject = appContext.activeProject else { return }
             isLoadingTrainingReadiness = true
             labelRecordingCounts = [:]
+            readinessError = nil
 
             defer {
                 if appContext.activeProjectUID == activeProject.uid {
@@ -141,21 +176,15 @@ struct TrainWorkspaceView: View {
 
             await appContext.refreshAvailableModelVersions(for: activeProject.uid, force: true)
             await loadRecordingCounts(for: activeProject)
-            if appContext.trainingProjectUID == activeProject.uid, appContext.trainingRequestUID != nil {
-                await appContext.refreshTrainingStatus()
+            if trainingSession.activeProjectUID == activeProject.uid, trainingSession.requestUID != nil {
+                await trainingSession.refreshStatus()
             }
             if let latestVersion = appContext.latestKnownVersion(for: activeProject.uid) {
                 _ = try? await appContext.modelSpecs(projectUID: activeProject.uid, version: latestVersion)
             }
         }
-        .task(id: appContext.trainingRequestUID) {
-            stageTrainingSequenceIfNeeded()
-        }
-        .task(id: appContext.trainingStatus ?? "") {
+        .task(id: trainingSession.backendStatus ?? "") {
             reactToTrainingStatus()
-        }
-        .onDisappear {
-            trainingStepTask?.cancel()
         }
         .overlay(alignment: .bottom) {
             if let installSuccessMessage {
@@ -293,12 +322,12 @@ struct TrainWorkspaceView: View {
         .allowsHitTesting(false)
     }
 
-    private func trainingActionButton(for project: Project, isReady: Bool) -> some View {
-        RSRPrimaryButton(title: appContext.isStartingTraining ? "Starting training..." : "Start training") {
-            startTraining(for: project)
+    private func trainingActionButton(for project: Project, isReady: Bool, clipCount: Int) -> some View {
+        RSRPrimaryButton(title: trainingSession.isStarting ? "Starting training..." : "Start training") {
+            startTraining(for: project, clipCount: clipCount)
         }
-        .disabled(!isReady || appContext.isStartingTraining)
-        .opacity((!isReady || appContext.isStartingTraining) ? 0.55 : 1)
+        .disabled(!isReady || trainingSession.isStarting)
+        .opacity((!isReady || trainingSession.isStarting) ? 0.55 : 1)
     }
 
     private var recordAudioButton: some View {
@@ -384,8 +413,8 @@ struct TrainWorkspaceView: View {
                     .buttonStyle(TintedActionButtonStyle(tint: Color(red: 0.91, green: 0.47, blue: 0.32)))
                 }
 
-                if let trainingError = appContext.trainingError {
-                    Text(trainingError)
+                if let readinessError {
+                    Text(readinessError)
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
@@ -443,10 +472,10 @@ struct TrainWorkspaceView: View {
                 }
 
                 Button {
-                    startTraining(for: project)
+                    startTraining(for: project, clipCount: labelRecordingCounts.values.reduce(0, +))
                 } label: {
                     HStack(spacing: 8) {
-                        if appContext.isStartingTraining {
+                        if trainingSession.isStarting {
                             ProgressView()
                                 .controlSize(.small)
                         }
@@ -458,47 +487,12 @@ struct TrainWorkspaceView: View {
                     .padding(.vertical, 14)
                 }
                 .buttonStyle(.plain)
-                .disabled(!isReady || appContext.isStartingTraining)
+                .disabled(!isReady || trainingSession.isStarting)
 
                 if !isReady, let blockingText {
                     Text(blockingText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    private var trainingProgressCard: some View {
-        RSRCard {
-            VStack(alignment: .leading, spacing: RSRSpace.md) {
-                Text("Training continues in the cloud if you leave — come back to Train any time to check progress.")
-                    .font(.rsrBody)
-                    .foregroundStyle(RSR.labelSecondary)
-
-                ForEach(trainingSteps, id: \.self) { step in
-                    HStack(spacing: 12) {
-                        Image(systemName: symbolName(for: step))
-                            .foregroundStyle(symbolColor(for: step))
-                        Text(step)
-                            .font(.rsrBody)
-                            .foregroundStyle(RSR.labelPrimary)
-                    }
-                }
-
-                RSRMeter(fraction: trainingProgressValue, tint: RSR.accent, height: 6)
-                    .frame(height: 6)
-
-                HStack {
-                    Text("~\(estimatedMinutesRemaining) min remaining")
-                        .font(.rsrMeta)
-                        .foregroundStyle(RSR.labelSecondary)
-
-                    Spacer()
-
-                    RSRTonalButton(title: "Leave running") {
-                        onLeaveRunning()
-                    }
                 }
             }
         }
@@ -512,13 +506,13 @@ struct TrainWorkspaceView: View {
                     .tracking(RSRTracking.title)
                     .foregroundStyle(RSR.labelPrimary)
 
-                Text(appContext.trainingStatus ?? "The latest training run did not finish successfully.")
+                Text(trainingSession.backendStatus ?? "The latest training run did not finish successfully.")
                     .font(.rsrBody)
                     .foregroundStyle(RSR.labelSecondary)
 
                 HStack(spacing: 12) {
                     RSRPrimaryButton(title: "Retry") {
-                        startTraining(for: project)
+                        startTraining(for: project, clipCount: labelRecordingCounts.values.reduce(0, +))
                     }
                     RSRTonalButton(title: "View in Models", action: onViewModels)
                 }
@@ -652,13 +646,17 @@ struct TrainWorkspaceView: View {
 
             labelRecordingCounts = resolved
         } catch {
-            appContext.trainingError = error.localizedDescription
+            readinessError = error.localizedDescription
         }
     }
 
-    private func startTraining(for project: Project) {
+    private func startTraining(for project: Project, clipCount: Int) {
         Task {
-            await appContext.startTraining(for: project.uid)
+            await trainingSession.startTraining(
+                projectUID: project.uid,
+                projectName: project.name,
+                clipCount: clipCount
+            )
         }
     }
 
@@ -761,131 +759,50 @@ struct TrainWorkspaceView: View {
         }
     }
 
+    private func installCompletedTrainingIfAvailable() {
+        guard let projectUID = trainingSession.activeProjectUID else { return }
+
+        Task {
+            if appContext.latestKnownVersion(for: projectUID) == nil {
+                await appContext.refreshAvailableModelVersions(for: projectUID, force: true)
+            }
+
+            guard let latestVersion = appContext.latestKnownVersion(for: projectUID) else { return }
+            await MainActor.run {
+                installLatestVersion(version: latestVersion, projectUID: projectUID)
+            }
+        }
+    }
+
     private func hasFreshCloudVersion(_ version: String, projectUID: String) -> Bool {
         !appContext.activeProjectInstalledModels.contains(where: { $0.version == version && $0.projectUID == projectUID })
     }
 
-    private var trainingSteps: [String] {
-        ["Uploading data", "Preprocessing", "Training model", "Packaging for device"]
-    }
-
-    private var currentTrainingStep: String {
-        trainingSteps[displayedTrainingStepIndex]
-    }
-
-    private var trainingProgressValue: Double {
-        Double(max(trainingSteps.firstIndex(of: currentTrainingStep) ?? 0, 0) + 1) / Double(trainingSteps.count)
-    }
-
-    private var estimatedMinutesRemaining: Int {
-        max(1, (trainingSteps.count - (trainingSteps.firstIndex(of: currentTrainingStep) ?? 0)) * 2)
-    }
-
-    private var trainingDidFail: Bool {
-        let normalized = appContext.trainingStatus?.lowercased() ?? ""
-        return normalized.contains("fail") || normalized.contains("error")
-    }
-
-    private func stageTrainingSequenceIfNeeded() {
-        trainingStepTask?.cancel()
-
-        guard let requestUID = appContext.trainingRequestUID else {
-            displayedTrainingStepIndex = 0
-            isHoldingCompletedTrainingState = false
-            stagedTrainingRequestUID = nil
-            failedTrainingHapticRequestUID = nil
-            return
-        }
-
-        guard stagedTrainingRequestUID != requestUID else {
-            return
-        }
-
-        stagedTrainingRequestUID = requestUID
-        displayedTrainingStepIndex = 0
-        isHoldingCompletedTrainingState = true
-
-        trainingStepTask = Task {
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard stagedTrainingRequestUID == requestUID else { return }
-                displayedTrainingStepIndex = 1
-                AppHaptics.stepTick()
-            }
-
-            try? await Task.sleep(nanoseconds: 2_200_000_000)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard stagedTrainingRequestUID == requestUID else { return }
-                displayedTrainingStepIndex = 2
-                AppHaptics.stepTick()
-            }
-        }
-    }
-
     private func reactToTrainingStatus() {
-        if trainingDidFail {
-            if failedTrainingHapticRequestUID != appContext.trainingRequestUID {
-                failedTrainingHapticRequestUID = appContext.trainingRequestUID
+        if trainingSession.didFail {
+            if !didEmitFailureHaptic {
+                didEmitFailureHaptic = true
                 AppHaptics.failure()
             }
-            isHoldingCompletedTrainingState = false
             return
         }
 
-        guard let completedRequestUID = appContext.trainingRequestUID else {
-            isHoldingCompletedTrainingState = false
+        didEmitFailureHaptic = false
+
+        guard trainingSession.isCompleted,
+              let requestUID = trainingSession.requestUID,
+              lastCompletedRequestUID != requestUID else {
             return
         }
 
-        guard !appContext.isTrainingInProgress else {
-            isHoldingCompletedTrainingState = true
-            return
-        }
+        lastCompletedRequestUID = requestUID
+        AppHaptics.stepTick()
 
-        trainingStepTask?.cancel()
-        trainingStepTask = Task {
-            while !Task.isCancelled {
-                let currentIndex = await MainActor.run { displayedTrainingStepIndex }
-                if currentIndex >= 2 { break }
-                try? await Task.sleep(nanoseconds: 100_000_000)
-            }
-
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard stagedTrainingRequestUID == completedRequestUID else { return }
-                displayedTrainingStepIndex = 3
-                isHoldingCompletedTrainingState = true
-                AppHaptics.stepTick()
-            }
-
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard stagedTrainingRequestUID == completedRequestUID else { return }
-                isHoldingCompletedTrainingState = false
+        if let activeProjectUID = trainingSession.activeProjectUID {
+            Task {
+                await appContext.refreshAvailableModelVersions(for: activeProjectUID, force: true)
             }
         }
-    }
-
-    private func symbolName(for step: String) -> String {
-        let index = trainingSteps.firstIndex(of: step) ?? 0
-        if index < displayedTrainingStepIndex {
-            return "checkmark.circle.fill"
-        }
-        if index == displayedTrainingStepIndex {
-            return "record.circle.fill"
-        }
-        return "circle"
-    }
-
-    private func symbolColor(for step: String) -> Color {
-        let index = trainingSteps.firstIndex(of: step) ?? 0
-        if index < displayedTrainingStepIndex {
-            return RSR.accent
-        }
-        return RSR.labelSecondary
     }
 
     private func readinessHaloColor(isReady: Bool, isLoading: Bool) -> Color {

@@ -24,9 +24,9 @@ struct InstalledProjectModel: Identifiable, Hashable {
 @MainActor
 @Observable
 final class RedesignAppContext {
-    private let loginService: AuthenticationService
     private let projectRepository: ProjectRepository
     private let labelRepository: LabelRepository
+    private let trainingSession: TrainingSessionService
 
     private let activeProjectKey = "redesign.activeProjectUID"
     private let defaultModelKey = "redesign.defaultModelVersions"
@@ -41,19 +41,11 @@ final class RedesignAppContext {
     var isLoadingLabels = false
     var projectError: String?
     var labelError: String?
-    var trainingProjectUID: String?
-    var trainingRequestUID: String?
-    var trainingStatus: String?
-    var trainingHistory: [TrainingStatusReport] = []
-    var trainingError: String?
-    var isStartingTraining = false
 
-    private var trainingPollTask: Task<Void, Never>?
-
-    init(loginService: AuthenticationService) {
-        self.loginService = loginService
+    init(loginService: AuthenticationService, trainingSession: TrainingSessionService) {
         self.projectRepository = ProjectRepository(loginService: loginService)
         self.labelRepository = LabelRepository(loginService: loginService)
+        self.trainingSession = trainingSession
         self.activeProjectUID = UserDefaults.standard.string(forKey: activeProjectKey)
         if let data = UserDefaults.standard.data(forKey: defaultModelKey),
            let decoded = try? JSONDecoder().decode([String: String].self, from: data) {
@@ -99,9 +91,6 @@ final class RedesignAppContext {
             await refreshAvailableModelVersions(for: project.uid, force: true)
         }
 
-        if trainingRequestUID != nil {
-            await refreshTrainingStatus()
-        }
     }
 
     func refreshProjects() async {
@@ -193,6 +182,8 @@ final class RedesignAppContext {
         if defaultModelVersionsByProject[projectUID] == nil {
             setDefaultModelVersion(version, for: projectUID)
         }
+
+        trainingSession.markInstalled(projectUID: projectUID)
     }
 
     func removeInstalledModel(projectUID: String, version: String) throws {
@@ -238,52 +229,6 @@ final class RedesignAppContext {
         }
 
         return defaultInstalledModel(for: projectUID)
-    }
-
-    func startTraining(for projectUID: String) async {
-        isStartingTraining = true
-        trainingError = nil
-
-        do {
-            let request = try await projectRepository.startTraining(projectUID: projectUID)
-            trainingProjectUID = projectUID
-            trainingRequestUID = request.requestUID
-            await refreshTrainingStatus()
-            beginPollingTrainingStatus()
-        } catch {
-            trainingError = error.localizedDescription
-        }
-
-        isStartingTraining = false
-    }
-
-    func refreshTrainingStatus() async {
-        guard let trainingRequestUID else { return }
-
-        do {
-            let snapshot = try await projectRepository.trainingStatus(trainingRequestUID: trainingRequestUID)
-            trainingStatus = snapshot.status
-            trainingHistory = try await projectRepository.trainingStatusHistory(trainingRequestUID: trainingRequestUID)
-
-            if !isTrainingInProgress, let trainingProjectUID {
-                await refreshAvailableModelVersions(for: trainingProjectUID, force: true)
-            }
-        } catch {
-            trainingError = error.localizedDescription
-        }
-    }
-
-    var isTrainingInProgress: Bool {
-        guard let trainingStatus else { return false }
-        let normalized = trainingStatus.lowercased()
-        return !normalized.contains("complete")
-            && !normalized.contains("success")
-            && !normalized.contains("error")
-            && !normalized.contains("fail")
-    }
-
-    func clearTrainingError() {
-        trainingError = nil
     }
 
     func projectLabels(for project: Project) -> [RecorderLabel] {
@@ -342,24 +287,6 @@ final class RedesignAppContext {
 
     private func modelSpecKey(projectUID: String, version: String) -> String {
         "\(projectUID)::\(version)"
-    }
-
-    private func beginPollingTrainingStatus() {
-        trainingPollTask?.cancel()
-        trainingPollTask = Task { [weak self] in
-            guard let self else { return }
-
-            for _ in 0..<150 {
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-                if Task.isCancelled { return }
-
-                await self.refreshTrainingStatus()
-
-                if !self.isTrainingInProgress {
-                    return
-                }
-            }
-        }
     }
 }
 
