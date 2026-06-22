@@ -200,7 +200,7 @@ struct LabelReviewFlowView: View {
 
             HStack(alignment: .bottom, spacing: 10) {
                 Text(timeLabel(for: currentTime))
-                    .font(.rsrDisplay)
+                    .rsrDisplayFont()
                     .foregroundStyle(RSR.labelPrimary)
                     .monospacedDigit()
 
@@ -337,10 +337,11 @@ struct LabelReviewFlowView: View {
     private func footerDecisionBar(enabled: Bool) -> some View {
         VStack(spacing: 12) {
             RSRDecisionBar(
-                isEnabled: enabled,
                 onDiscard: { submitDecision(.discard) },
                 onKeep: { submitDecision(.keep) }
             )
+            .disabled(!enabled)
+            .opacity(enabled ? 1 : 0.4)
             statsLabel
         }
     }

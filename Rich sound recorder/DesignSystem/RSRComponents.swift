@@ -306,8 +306,22 @@ struct RSRListRow: View {
     let title: String
     var subtitle: String? = nil
     var systemImage: String = "rectangle.stack"
+    var action: (() -> Void)? = nil
 
     var body: some View {
+        Group {
+            if let action {
+                Button(action: action) {
+                    rowContent
+                }
+                .buttonStyle(.plain)
+            } else {
+                rowContent
+            }
+        }
+    }
+
+    private var rowContent: some View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
                 .font(.system(size: 18, weight: .regular))
@@ -324,8 +338,7 @@ struct RSRListRow: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(RSR.labelTertiary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
+        .padding(.horizontal, 16).padding(.vertical, 13)
         .rsrGlass(.regular, radius: RSRRadius.control)
     }
 }

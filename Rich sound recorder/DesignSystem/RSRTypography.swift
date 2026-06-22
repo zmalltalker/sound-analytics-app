@@ -3,38 +3,68 @@
 //  Rich Sound Recorder — Design System
 //
 //  San Francisco (the system font), addressed by ROLE. Hierarchy comes
-//  from weight and tracking, not color. All sizes are Dynamic-Type
-//  friendly — they scale with the user's text-size setting via
-//  `.relativeTo` text styles. Numbers that change use monospaced digits.
+//  from weight and tracking, not color. Every role is bound to a SwiftUI
+//  text style, so it scales with the user's Text Size setting across the
+//  standard steps AND the five Accessibility sizes (AX1–AX5). The one
+//  custom size — the 70pt timer — scales (capped) via @ScaledMetric; use
+//  the `.rsrDisplayFont()` modifier, not the fixed `.rsrDisplay` constant.
+//  Numbers that change use monospaced digits.
+//
+//  Dynamic Type is never disabled. Because text grows, layouts must give
+//  it room — see the Design System doc, §03 “Type scales with the reader”:
+//    • size controls with a 44pt MIN height, never a fixed height;
+//    • let names WRAP (lineLimit ≥ 2) before they truncate;
+//    • reflow horizontal rows (name + meter + count) to vertical, and let
+//      tab-bar labels fall away, at the Accessibility sizes.
+//  Verify every screen at .dynamicTypeSize(.accessibility5) before shipping.
 //
 
 import SwiftUI
 
 extension Font {
 
+    /// 34pt Heavy — screen titles ("Detect", "Train"). Scales via .largeTitle.
+    static let rsrLargeTitle = Font.system(.largeTitle, design: .default, weight: .heavy)
+
+    /// 22pt Bold — card / section titles ("Ready to train"). Scales via .title2.
+    static let rsrTitle = Font.system(.title2, design: .default, weight: .bold)
+
+    /// 17pt Semibold — button labels, prominent headlines. Scales via .headline.
+    static let rsrHeadline = Font.system(.headline, design: .default, weight: .semibold)
+
+    /// 15pt Medium — body & primary list text. Scales via .subheadline.
+    static let rsrBody = Font.system(.subheadline, design: .default, weight: .medium)
+
+    /// 13pt Medium — supporting / subhead text. Scales via .footnote.
+    static let rsrSubhead = Font.system(.footnote, design: .default, weight: .medium)
+
+    /// 12pt Semibold — captions, tab labels (often UPPERCASED + tracked). Scales via .caption.
+    static let rsrCaption = Font.system(.caption, design: .default, weight: .semibold)
+
+    /// 12pt Monospaced — technical metadata ("48 kHz · MONO · AAC"). Scales via .caption.
+    static let rsrMeta = Font.system(.caption, design: .monospaced, weight: .semibold)
+
     /// 70pt Ultralight — the listening timer / hero numerals.
+    /// ⚠️ FIXED size: this constant does NOT scale with Dynamic Type. Prefer the
+    /// `.rsrDisplayFont()` modifier below, which scales (capped) via @ScaledMetric.
+    /// Kept only for fixed-frame previews and non-scaling contexts.
     static let rsrDisplay = Font.system(size: 70, weight: .ultraLight, design: .default)
+}
 
-    /// 34pt Heavy — screen titles ("Detect", "Train").
-    static let rsrLargeTitle = Font.system(size: 34, weight: .heavy, design: .default)
+// MARK: - Display (timer) — Dynamic-Type-aware via @ScaledMetric
 
-    /// 22pt Bold — card / section titles ("Ready to train").
-    static let rsrTitle = Font.system(size: 22, weight: .bold, design: .default)
+/// Scales the 70pt timer relative to .largeTitle, capped at ~96pt so the
+/// numerals stay on one line at the largest Accessibility sizes.
+struct RSRDisplayFont: ViewModifier {
+    @ScaledMetric(relativeTo: .largeTitle) private var size: CGFloat = 70
+    func body(content: Content) -> some View {
+        content.font(.system(size: min(size, 96), weight: .ultraLight))
+    }
+}
 
-    /// 17pt Semibold — button labels, prominent headlines.
-    static let rsrHeadline = Font.system(size: 17, weight: .semibold, design: .default)
-
-    /// 15pt Medium — body & primary list text.
-    static let rsrBody = Font.system(size: 15, weight: .medium, design: .default)
-
-    /// 13pt Medium — supporting / subhead text.
-    static let rsrSubhead = Font.system(size: 13, weight: .medium, design: .default)
-
-    /// 12pt Semibold — captions, tab labels (often UPPERCASED + tracked).
-    static let rsrCaption = Font.system(size: 12, weight: .semibold, design: .default)
-
-    /// 12pt Monospaced — technical metadata ("48 kHz · MONO · AAC").
-    static let rsrMeta = Font.system(size: 12, weight: .semibold, design: .monospaced)
+extension View {
+    /// Apply to the listening timer so it tracks Dynamic Type (capped at ~96pt).
+    func rsrDisplayFont() -> some View { modifier(RSRDisplayFont()) }
 }
 
 // MARK: - Ready-made text styles

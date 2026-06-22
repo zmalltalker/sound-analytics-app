@@ -40,7 +40,8 @@ struct RSRGlass: ViewModifier {
             .background(
                 ZStack {
                     // 1 — system blur (saturation boost is built into Material)
-                    weight.material
+                    Rectangle()
+                        .fill(weight.material)
                     // 2 — token tint over the blur
                     fill
                 }

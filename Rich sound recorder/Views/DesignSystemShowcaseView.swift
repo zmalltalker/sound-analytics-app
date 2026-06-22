@@ -152,7 +152,7 @@ struct DesignSystemShowcaseView: View {
 
                     HStack(alignment: .bottom, spacing: 10) {
                         Text("0:13")
-                            .font(.rsrDisplay)
+                            .rsrDisplayFont()
                             .foregroundStyle(RSR.labelPrimary)
                             .monospacedDigit()
 
@@ -220,6 +220,23 @@ struct DesignSystemShowcaseView: View {
 
             RSRCard {
                 VStack(alignment: .leading, spacing: RSRSpace.card) {
+                    Text("Review queue")
+                        .font(.rsrTitle)
+                        .tracking(RSRTracking.title)
+                        .foregroundStyle(RSR.labelPrimary)
+
+                    VStack(spacing: 0) {
+                        RSRRecordingRow(timestamp: "Jun 14 · 2:31 PM", relative: "Recorded today", duration: "0:14")
+                        Divider()
+                            .overlay(RSR.hairline)
+                            .padding(.leading, 51)
+                        RSRRecordingRow(timestamp: "Jun 13 · 4:47 PM", relative: "Yesterday", duration: "0:21")
+                    }
+                }
+            }
+
+            RSRCard {
+                VStack(alignment: .leading, spacing: RSRSpace.card) {
                     Text("Loading and outcome")
                         .font(.rsrTitle)
                         .tracking(RSRTracking.title)
@@ -282,6 +299,10 @@ struct DesignSystemShowcaseView: View {
             )
             .frame(height: 620)
             .clipShape(RoundedRectangle(cornerRadius: 38, style: .continuous))
+
+            RSRTrainingSheet(state: .complete)
+                .frame(height: 620)
+                .clipShape(RoundedRectangle(cornerRadius: 38, style: .continuous))
         }
     }
 
@@ -305,7 +326,11 @@ struct DesignSystemShowcaseView: View {
     private var tabBarSection: some View {
         VStack(alignment: .leading, spacing: RSRSpace.md) {
             sectionTitle("Navigation")
-            RSRTabBar(tabs: RSRTabBar.standardTabs, selection: $selectedTab)
+            RSRTabBar(
+                tabs: RSRTabBar.standardTabs,
+                selection: $selectedTab,
+                badges: [.running, .none, .ready, .none]
+            )
         }
     }
 
@@ -313,7 +338,7 @@ struct DesignSystemShowcaseView: View {
         VStack(alignment: .leading, spacing: RSRSpace.md) {
             sectionTitle("Typography")
             Text("rsrDisplay")
-                .font(.rsrDisplay)
+                .rsrDisplayFont()
             Text("rsrLargeTitle").font(.rsrLargeTitle)
             Text("rsrTitle").font(.rsrTitle)
             Text("rsrHeadline").font(.rsrHeadline)

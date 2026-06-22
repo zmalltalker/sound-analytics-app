@@ -184,7 +184,7 @@ struct DetectWorkspaceView: View {
     private var timerLabel: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             Text(formattedElapsedTime(referenceDate: context.date))
-                .font(.rsrDisplay)
+                .rsrDisplayFont()
                 .tracking(RSRTracking.display)
                 .monospacedDigit()
                 .foregroundStyle(RSR.labelPrimary)

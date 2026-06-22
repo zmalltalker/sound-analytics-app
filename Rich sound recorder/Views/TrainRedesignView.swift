@@ -143,7 +143,6 @@ struct TrainWorkspaceView: View {
                     state: trainingState,
                     project: trainingSession.activeProjectName ?? appContext.activeProject?.name ?? "Project",
                     clipCount: trainingSession.clipCount,
-                    isInstalling: isInstallingLatest,
                     onLeaveRunning: {
                         trainingSession.leaveRunning()
                     },

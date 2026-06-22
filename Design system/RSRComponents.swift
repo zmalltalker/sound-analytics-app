@@ -306,30 +306,40 @@ struct RSRListRow: View {
     let title: String
     var subtitle: String? = nil
     var systemImage: String = "rectangle.stack"
-    var action: () -> Void = {}
+    var action: (() -> Void)? = nil
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 18, weight: .regular))
-                    .foregroundStyle(RSR.accent)
-                    .frame(width: 22, height: 22)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.rsrBody.weight(.semibold)).foregroundStyle(RSR.labelPrimary)
-                    if let subtitle {
-                        Text(subtitle).font(.system(size: 12, weight: .medium)).foregroundStyle(RSR.labelSecondary)
-                    }
+        Group {
+            if let action {
+                Button(action: action) {
+                    rowContent
                 }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(RSR.labelTertiary)
+                .buttonStyle(.plain)
+            } else {
+                rowContent
             }
-            .padding(.horizontal, 16).padding(.vertical, 13)
-            .rsrGlass(.regular, radius: RSRRadius.control)
         }
-        .buttonStyle(.plain)
+    }
+
+    private var rowContent: some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(RSR.accent)
+                .frame(width: 22, height: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.rsrBody.weight(.semibold)).foregroundStyle(RSR.labelPrimary)
+                if let subtitle {
+                    Text(subtitle).font(.system(size: 12, weight: .medium)).foregroundStyle(RSR.labelSecondary)
+                }
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(RSR.labelTertiary)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 13)
+        .rsrGlass(.regular, radius: RSRRadius.control)
     }
 }
 
@@ -349,17 +359,21 @@ struct RSRTab: Identifiable {
 struct RSRTabBar: View {
     let tabs: [RSRTab]
     @Binding var selection: Int
+    var badges: [RSRBadgeKind] = []
 
     var body: some View {
         HStack(spacing: 0) {
             ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
                 let active = index == selection
+                let badge = badges.indices.contains(index) ? badges[index] : .none
                 Button {
                     selection = index
                 } label: {
                     VStack(spacing: 4) {
                         Image(systemName: active ? tab.iconActive : tab.icon)
                             .font(.system(size: 21, weight: .regular))
+                            .frame(width: 28, height: 24)
+                            .rsrTabBadge(badge, ringColor: RSR.surfaceTabBar)
                         Text(tab.title).font(.system(size: 10, weight: .semibold))
                     }
                     .foregroundStyle(active ? RSR.accent : RSR.labelSecondary)
