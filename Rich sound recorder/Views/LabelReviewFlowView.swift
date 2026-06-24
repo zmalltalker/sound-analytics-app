@@ -2,13 +2,19 @@ import AVFoundation
 import SwiftUI
 
 struct LabelReviewFlowView: View {
+    private enum FailureContext: Equatable {
+        case loadingSnippet
+        case applyingDeletions
+    }
+
     private enum Stage: Equatable {
         case intro
         case loading
         case playing
         case decided(RSRReviewOutcome)
+        case finalizing
         case finished
-        case failed(String)
+        case failed(FailureContext, String)
     }
 
     let labelUID: String
@@ -26,6 +32,8 @@ struct LabelReviewFlowView: View {
     @State private var duration: TimeInterval = 0
     @State private var downloadProgress = 0.12
     @State private var isSubmittingDecision = false
+    @State private var deletedSnippets: [DeletedSnippetRange] = []
+    @State private var deletedSnippetCount = 0
 
     @State private var audioPlayer: AVAudioPlayer?
     @State private var playbackTimer: Timer?
@@ -59,15 +67,24 @@ struct LabelReviewFlowView: View {
                 } footer: {
                     decidedFooter
                 }
+            case .finalizing:
+                reviewScaffold {
+                    finalizingContent
+                } footer: {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        statsLabel
+                    }
+                }
             case .finished:
                 finishedView
-            case .failed(let message):
+            case .failed(let context, let message):
                 reviewScaffold {
-                    failedContent(message)
+                    failedContent(context: context, message: message)
                 } footer: {
                     VStack(spacing: 12) {
                         RSRPrimaryButton(title: "Retry") {
-                            loadCurrentSnippet()
+                            retry(for: context)
                         }
                         statsLabel
                     }
@@ -148,6 +165,8 @@ struct LabelReviewFlowView: View {
                     currentIndex = 0
                     keptCount = 0
                     removedCount = 0
+                    deletedSnippets = []
+                    deletedSnippetCount = 0
                     loadCurrentSnippet()
                 }
 
@@ -290,12 +309,12 @@ struct LabelReviewFlowView: View {
         .padding(.horizontal, RSRSpace.screen)
     }
 
-    private func failedContent(_ message: String) -> some View {
+    private func failedContent(context: FailureContext, message: String) -> some View {
         VStack(alignment: .leading, spacing: RSRSpace.lg) {
             RSROutcomeBadge(outcome: .removed)
 
             VStack(alignment: .leading, spacing: RSRSpace.sm) {
-                Text("Couldn’t load recording")
+                Text(context == .loadingSnippet ? "Couldn’t load recording" : "Couldn’t delete discarded recordings")
                     .font(.rsrTitle)
                     .foregroundStyle(RSR.labelPrimary)
 
@@ -307,8 +326,32 @@ struct LabelReviewFlowView: View {
         .padding(.horizontal, RSRSpace.screen)
     }
 
-    private var finishedView: some View {
+    private var finalizingContent: some View {
         VStack(spacing: 0) {
+            ProgressView()
+                .controlSize(.large)
+                .padding(.bottom, 30)
+
+            Text("APPLYING CHANGES")
+                .rsrEyebrow()
+                .padding(.bottom, 11)
+
+            Text("Deleting discarded recordings")
+                .font(.rsrTitle)
+                .foregroundStyle(RSR.labelPrimary)
+
+            Text("Removed \(removedCount) clip\(removedCount == 1 ? "" : "s") from \(labelName)")
+                .font(.rsrBody)
+                .foregroundStyle(RSR.labelSecondary)
+                .padding(.top, 8)
+        }
+        .padding(.horizontal, RSRSpace.screen)
+    }
+
+    private var finishedView: some View {
+        let removedSummary = deletedSnippetCount > 0 ? deletedSnippetCount : removedCount
+
+        return VStack(spacing: 0) {
             topBar
             Spacer()
             RSROutcomeBadge(outcome: .kept)
@@ -316,7 +359,7 @@ struct LabelReviewFlowView: View {
                 .font(.rsrLargeTitle)
                 .foregroundStyle(RSR.labelPrimary)
                 .padding(.top, 26)
-            Text("\(keptCount) kept · \(removedCount) removed")
+            Text("\(keptCount) kept · \(removedSummary) removed")
                 .font(.rsrBody)
                 .foregroundStyle(RSR.labelSecondary)
                 .padding(.top, 8)
@@ -467,7 +510,7 @@ struct LabelReviewFlowView: View {
 
                 await MainActor.run {
                     downloadProgressTask?.cancel()
-                    stage = .failed(error.localizedDescription)
+                    stage = .failed(.loadingSnippet, error.localizedDescription)
                 }
             }
         }
@@ -484,7 +527,7 @@ struct LabelReviewFlowView: View {
             startPlaybackTimer()
             replay()
         } catch {
-            stage = .failed(error.localizedDescription)
+            stage = .failed(.loadingSnippet, error.localizedDescription)
         }
     }
 
@@ -500,40 +543,21 @@ struct LabelReviewFlowView: View {
 
         isSubmittingDecision = true
 
-        Task {
-            do {
-                try await clipRepository.submitReviewDecision(
-                    labelUID: labelUID,
-                    start: snippet.start,
-                    end: snippet.end,
-                    decision: decision
-                )
-
-                guard !Task.isCancelled else { return }
-
-                await MainActor.run {
-                    isSubmittingDecision = false
-                    lastDecision = decision
-                    switch decision {
-                    case .keep:
-                        keptCount += 1
-                        stage = .decided(.kept)
-                    case .discard:
-                        removedCount += 1
-                        stage = .decided(.removed)
-                    }
-                    tearDownPlayback()
-                    scheduleAdvance()
-                }
-            } catch {
-                guard !Task.isCancelled else { return }
-
-                await MainActor.run {
-                    isSubmittingDecision = false
-                    stage = .failed(error.localizedDescription)
-                }
-            }
+        isSubmittingDecision = false
+        lastDecision = decision
+        switch decision {
+        case .keep:
+            keptCount += 1
+            stage = .decided(.kept)
+        case .discard:
+            deletedSnippets.append(
+                DeletedSnippetRange(start: snippet.start, end: snippet.end)
+            )
+            removedCount += 1
+            stage = .decided(.removed)
         }
+        tearDownPlayback()
+        scheduleAdvance()
     }
 
     private func scheduleAdvance() {
@@ -554,6 +578,14 @@ struct LabelReviewFlowView: View {
             keptCount = max(0, keptCount - 1)
         case .discard:
             removedCount = max(0, removedCount - 1)
+            if let snippet = currentSnippet {
+                let matchingIndex = deletedSnippets.lastIndex { candidate in
+                    candidate.start == snippet.start && candidate.end == snippet.end
+                }
+                if let matchingIndex {
+                    deletedSnippets.remove(at: matchingIndex)
+                }
+            }
         case .none:
             break
         }
@@ -569,7 +601,49 @@ struct LabelReviewFlowView: View {
             currentIndex += 1
             loadCurrentSnippet()
         } else {
+            finalizeReview()
+        }
+    }
+
+    private func finalizeReview() {
+        guard !deletedSnippets.isEmpty else {
             stage = .finished
+            return
+        }
+
+        tearDownPlayback()
+        cancelBackgroundWork()
+        stage = .finalizing
+
+        Task {
+            do {
+                let deletedCount = try await clipRepository.deleteSnippets(
+                    labelUID: labelUID,
+                    snippets: deletedSnippets
+                )
+
+                guard !Task.isCancelled else { return }
+
+                await MainActor.run {
+                    deletedSnippetCount = deletedCount
+                    stage = .finished
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+
+                await MainActor.run {
+                    stage = .failed(.applyingDeletions, error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    private func retry(for context: FailureContext) {
+        switch context {
+        case .loadingSnippet:
+            loadCurrentSnippet()
+        case .applyingDeletions:
+            finalizeReview()
         }
     }
 

@@ -40,7 +40,9 @@ struct LabelDetailView: View {
                 .padding(.bottom, 20)
             }
         }
-        .fullScreenCover(isPresented: $showReviewFlow) {
+        .fullScreenCover(isPresented: $showReviewFlow, onDismiss: {
+            Task { await loadSnippets() }
+        }) {
             LabelReviewFlowView(
                 labelUID: labelUID,
                 labelName: labelName,

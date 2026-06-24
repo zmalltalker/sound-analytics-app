@@ -5,6 +5,11 @@ enum ClipReviewDecision {
     case discard
 }
 
+struct DeletedSnippetRange: Equatable {
+    let start: TimeInterval
+    let end: TimeInterval
+}
+
 @MainActor
 class ClipRepository {
     private let apiService: APIService
@@ -42,20 +47,30 @@ class ClipRepository {
         return SnippetAudioFile(fileURL: fileURL, metadata: metadata)
     }
 
-    func submitReviewDecision(
-        labelUID: String,
-        start: TimeInterval,
-        end: TimeInterval,
-        decision: ClipReviewDecision
-    ) async throws {
-        _ = labelUID
-        _ = start
-        _ = end
-        _ = decision
+    func deleteSnippets(labelUID: String, snippets: [DeletedSnippetRange]) async throws -> Int {
+        var deletedCount = 0
 
-        // The API has not exposed keep/discard yet. Keep the review flow wired
-        // through the repository so the eventual backend call lands in one place.
-        try await Task.sleep(for: .milliseconds(150))
+        for snippet in snippets {
+            let data = try await apiService.postResponse(
+                path: "data_management/delete",
+                queryItems: [
+                    URLQueryItem(name: "start", value: String(Int(snippet.start))),
+                    URLQueryItem(name: "end", value: String(Int(snippet.end))),
+                    URLQueryItem(name: "label_uid", value: labelUID.lowercased())
+                ]
+            )
+
+            let body = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard let body, let count = Int(body) else {
+                throw APIError.invalidResponse
+            }
+
+            deletedCount += count
+        }
+
+        return deletedCount
     }
 
     private func parseMetadata(from headerValue: String?) -> SnippetAudioFile.Metadata? {
