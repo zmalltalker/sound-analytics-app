@@ -3,6 +3,7 @@ import SwiftUI
 struct LabelDetailView: View {
     let labelUID: String
     let labelName: String
+    let availableLabels: [RecorderLabel]
     let clipRepository: ClipRepository
 
     @State private var snippets: [LabelSnippet] = []
@@ -46,6 +47,7 @@ struct LabelDetailView: View {
             LabelReviewFlowView(
                 labelUID: labelUID,
                 labelName: labelName,
+                availableLabels: availableLabels,
                 snippets: snippets,
                 clipRepository: clipRepository
             )

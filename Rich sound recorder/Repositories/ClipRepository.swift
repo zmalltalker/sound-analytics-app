@@ -3,6 +3,7 @@ import Foundation
 enum ClipReviewDecision {
     case keep
     case discard
+    case relabel(RecorderLabel)
 }
 
 struct DeletedSnippetRange: Equatable {
@@ -71,6 +72,23 @@ class ClipRepository {
         }
 
         return deletedCount
+    }
+
+    func relabelSnippet(start: TimeInterval, end: TimeInterval, oldLabelUID: String, newLabelUID: String) async throws {
+        let data = try await apiService.postResponse(
+            path: "data_management/relabel",
+            queryItems: [
+                URLQueryItem(name: "start", value: String(start)),
+                URLQueryItem(name: "end", value: String(end)),
+                URLQueryItem(name: "old_label_uid", value: oldLabelUID.lowercased()),
+                URLQueryItem(name: "new_label_uid", value: newLabelUID.lowercased())
+            ]
+        )
+        guard let body = String(data: data, encoding: .utf8),
+              let count = Int(body.trimmingCharacters(in: .whitespacesAndNewlines)),
+              count > 0 else {
+            throw APIError.invalidResponse
+        }
     }
 
     private func parseMetadata(from headerValue: String?) -> SnippetAudioFile.Metadata? {

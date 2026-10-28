@@ -646,6 +646,7 @@ struct LabelsTab: View {
                             LabelDetailView(
                                 labelUID: label.uid,
                                 labelName: label.name,
+                                availableLabels: labels,
                                 clipRepository: clipRepository
                             )
                         } label: {
