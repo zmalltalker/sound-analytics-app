@@ -19,6 +19,7 @@ struct LabelReviewFlowView: View {
 
     let labelUID: String
     let labelName: String
+    let availableLabels: [RecorderLabel]
     let snippets: [LabelSnippet]
     let clipRepository: ClipRepository
 
@@ -34,6 +35,9 @@ struct LabelReviewFlowView: View {
     @State private var isSubmittingDecision = false
     @State private var deletedSnippets: [DeletedSnippetRange] = []
     @State private var deletedSnippetCount = 0
+    @State private var showRelabelSheet = false
+    @State private var relabeledCount = 0
+    @State private var pendingRelabels: [Int: RecorderLabel] = [:]
 
     @State private var audioPlayer: AVAudioPlayer?
     @State private var playbackTimer: Timer?
@@ -91,6 +95,33 @@ struct LabelReviewFlowView: View {
                 }
             }
         }
+        .sheet(isPresented: $showRelabelSheet) {
+            NavigationStack {
+                List {
+                    Section("Choose a replacement for \(labelName)") {
+                        ForEach(availableLabels.filter { $0.uid.lowercased() != labelUID.lowercased() }) { label in
+                            Button {
+                                submitDecision(.relabel(label))
+                                showRelabelSheet = false
+                            } label: {
+                                Text(label.name)
+                                    .foregroundStyle(RSR.labelPrimary)
+                            }
+                        }
+                    }
+                }
+                .scrollContentBackground(.hidden)
+                .background(RSR.canvas)
+                .navigationTitle("Re-label recording")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { showRelabelSheet = false }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+        }
         .onDisappear {
             tearDownPlayback()
             cancelBackgroundWork()
@@ -131,6 +162,7 @@ struct LabelReviewFlowView: View {
             .font(.rsrHeadline)
             .foregroundStyle(RSR.accent)
             .buttonStyle(.plain)
+            .disabled(stage == .finalizing)
 
             Spacer()
 
@@ -167,6 +199,8 @@ struct LabelReviewFlowView: View {
                     removedCount = 0
                     deletedSnippets = []
                     deletedSnippetCount = 0
+                    relabeledCount = 0
+                    pendingRelabels = [:]
                     loadCurrentSnippet()
                 }
 
@@ -277,12 +311,13 @@ struct LabelReviewFlowView: View {
         VStack(spacing: 0) {
             RSROutcomeBadge(outcome: outcome)
 
-            Text(outcome.title)
+            Text(pendingRelabels[currentIndex] == nil ? outcome.title : "Re-labeled")
                 .font(.rsrLargeTitle)
                 .foregroundStyle(outcome.tint)
                 .padding(.top, 26)
 
-            Text(outcome == .kept ? "Saved to \(labelName) dataset" : "Won’t be used to train \(labelName)")
+            Text(pendingRelabels[currentIndex].map { "Will move to \($0.name)" }
+                 ?? (outcome == .kept ? "Saved to \(labelName) dataset" : "Won’t be used to train \(labelName)"))
                 .font(.rsrBody)
                 .foregroundStyle(RSR.labelSecondary)
                 .padding(.top, 8)
@@ -314,7 +349,7 @@ struct LabelReviewFlowView: View {
             RSROutcomeBadge(outcome: .removed)
 
             VStack(alignment: .leading, spacing: RSRSpace.sm) {
-                Text(context == .loadingSnippet ? "Couldn’t load recording" : "Couldn’t delete discarded recordings")
+                Text(context == .loadingSnippet ? "Couldn’t load recording" : "Couldn’t apply review changes")
                     .font(.rsrTitle)
                     .foregroundStyle(RSR.labelPrimary)
 
@@ -336,11 +371,11 @@ struct LabelReviewFlowView: View {
                 .rsrEyebrow()
                 .padding(.bottom, 11)
 
-            Text("Deleting discarded recordings")
+            Text("Saving review changes")
                 .font(.rsrTitle)
                 .foregroundStyle(RSR.labelPrimary)
 
-            Text("Removed \(removedCount) clip\(removedCount == 1 ? "" : "s") from \(labelName)")
+            Text("\(removedCount) to remove · \(relabeledCount) to re-label")
                 .font(.rsrBody)
                 .foregroundStyle(RSR.labelSecondary)
                 .padding(.top, 8)
@@ -359,7 +394,7 @@ struct LabelReviewFlowView: View {
                 .font(.rsrLargeTitle)
                 .foregroundStyle(RSR.labelPrimary)
                 .padding(.top, 26)
-            Text("\(keptCount) kept · \(removedSummary) removed")
+            Text("\(keptCount) kept · \(removedSummary) removed · \(relabeledCount) re-labeled")
                 .font(.rsrBody)
                 .foregroundStyle(RSR.labelSecondary)
                 .padding(.top, 8)
@@ -385,6 +420,11 @@ struct LabelReviewFlowView: View {
             )
             .disabled(!enabled)
             .opacity(enabled ? 1 : 0.4)
+            RSRSecondaryButton(title: "Re-label") {
+                audioPlayer?.pause()
+                showRelabelSheet = true
+            }
+            .disabled(!enabled || !availableLabels.contains { $0.uid.lowercased() != labelUID.lowercased() })
             statsLabel
         }
     }
@@ -412,7 +452,7 @@ struct LabelReviewFlowView: View {
     }
 
     private var statsLabel: some View {
-        Text("Kept \(keptCount) · Removed \(removedCount)")
+        Text("Kept \(keptCount) · Removed \(removedCount) · Re-labeled \(relabeledCount)")
             .font(.rsrCaption)
             .foregroundStyle(RSR.labelTertiary)
             .monospacedDigit()
@@ -555,6 +595,10 @@ struct LabelReviewFlowView: View {
             )
             removedCount += 1
             stage = .decided(.removed)
+        case .relabel(let label):
+            pendingRelabels[currentIndex] = label
+            relabeledCount += 1
+            stage = .decided(.kept)
         }
         tearDownPlayback()
         scheduleAdvance()
@@ -586,6 +630,9 @@ struct LabelReviewFlowView: View {
                     deletedSnippets.remove(at: matchingIndex)
                 }
             }
+        case .relabel:
+            pendingRelabels.removeValue(forKey: currentIndex)
+            relabeledCount = max(0, relabeledCount - 1)
         case .none:
             break
         }
@@ -606,7 +653,7 @@ struct LabelReviewFlowView: View {
     }
 
     private func finalizeReview() {
-        guard !deletedSnippets.isEmpty else {
+        guard !deletedSnippets.isEmpty || !pendingRelabels.isEmpty else {
             stage = .finished
             return
         }
@@ -615,17 +662,32 @@ struct LabelReviewFlowView: View {
         cancelBackgroundWork()
         stage = .finalizing
 
-        Task {
+        loadTask = Task {
             do {
-                let deletedCount = try await clipRepository.deleteSnippets(
-                    labelUID: labelUID,
-                    snippets: deletedSnippets
-                )
+                // Remove successful operations from the queue so Retry only applies
+                // changes that have not yet completed.
+                for index in pendingRelabels.keys.sorted() {
+                    try Task.checkCancellation()
+                    guard let target = pendingRelabels[index] else { continue }
+                    let snippet = snippets[index]
+                    try await clipRepository.relabelSnippet(
+                        start: snippet.start, end: snippet.end,
+                        oldLabelUID: labelUID, newLabelUID: target.uid
+                    )
+                    pendingRelabels.removeValue(forKey: index)
+                }
+                while let snippet = deletedSnippets.first {
+                    try Task.checkCancellation()
+                    deletedSnippetCount += try await clipRepository.deleteSnippets(
+                        labelUID: labelUID,
+                        snippets: [snippet]
+                    )
+                    deletedSnippets.removeFirst()
+                }
 
                 guard !Task.isCancelled else { return }
 
                 await MainActor.run {
-                    deletedSnippetCount = deletedCount
                     stage = .finished
                 }
             } catch {

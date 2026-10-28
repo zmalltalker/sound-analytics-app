@@ -2,6 +2,22 @@
 
 Supplementary backend notes that are not fully captured in `openapi.json`.
 
+## `POST /data_management/relabel`
+
+- Bearer-authenticated; no request body.
+- Required query parameters: `start`, `end` (floating-point timestamps),
+  `old_label_uid`, and `new_label_uid` (lowercase UUID strings).
+- Returns an integer count of affected events. The app treats zero as an
+  unsuccessful re-label rather than silently advancing.
+- Source: `audio_analytics_internal`, branch
+  `cloud_trainer_webrecorder_restapi`,
+  `python_packages/xal_restapi_utils/src/xal_restapi_utils/apps/webrecorder.py`.
+- That branch currently passes `user_ud` to a helper expecting `user_id`.
+  Confirm the deployed route has this corrected before live integration testing.
+- Review decisions are queued until review completion. Successful operations are
+  removed from the queue before retrying a partial failure. A lost response can
+  still leave the server outcome unknown; this API has no idempotency key.
+
 ## `GET /projects/{project_uid}/available_model_versions`
 
 - This endpoint should show a new model version once training has completed.
